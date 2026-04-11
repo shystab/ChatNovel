@@ -263,30 +263,11 @@ class AIService:
             weight=30
         )
         if not hits:
-            return f"未找到与“{query}”相关的外部参考内容。"
-
-        
+            return f"未找到与'{query}'相关的外部参考内容。"
 
         lines = [f"外部参考素材："]
-        clean_hits = 0
-
         for i, h in enumerate(hits, 1):
-            text = h['text']
-            # 检查是否包含敏感内容
-            is_sensitive = any(keyword in text for keyword in sensitive_keywords)
-
-            if is_sensitive:
-                # 对于敏感内容，只返回摘要信息，不显示具体内容
-                lines.append(f"[{i}] [内容已过滤 - 包含不适合展示的成人内容]")
-                print(f"[WARNING] 过滤敏感内容: {text[:100]}...")
-            else:
-                lines.append(f"[{i}] {text}")
-                clean_hits += 1
-
-        # 如果所有内容都被过滤了，返回特定提示
-        if clean_hits == 0:
-            return "找到了一些外部参考内容，但都包含不适合直接展示的成人内容。建议上传更健康、适合创作的素材。"
-
+            lines.append(f"[{i}] {h['text']}")
         return "\n".join(lines)
 
     def get_style_examples(self, query: str, project_id: str) -> str:
@@ -300,36 +281,11 @@ class AIService:
             weight=30
         )
         if not hits:
-            return f"未找到与“{query}”相关的文风范例。"
-
-        # 敏感关键词过滤（中文成人内容相关）
-        sensitive_keywords = [
-            "成人", "情色", "色情", "露骨", "性爱", "做爱", "床戏", "肉文",
-            "H文", "黄文", "淫秽", "猥亵", "下流", "淫荡", "强奸", "轮奸",
-            "乱伦", "群交", "肛交", "口交", "自慰", "手淫", "高潮", "射精",
-            "勃起", "阴道", "阴茎", "乳房", "屁股", "肛門", "性交", "性器"
-        ]
+            return f"未找到与'{query}'相关的文风范例。"
 
         lines = [f"文风范例（供模仿风格，不要直接复制）："]
-        clean_hits = 0
-
         for i, h in enumerate(hits, 1):
-            text = h['text']
-            # 检查是否包含敏感内容
-            is_sensitive = any(keyword in text for keyword in sensitive_keywords)
-
-            if is_sensitive:
-                # 对于敏感内容，只返回摘要信息，不显示具体内容
-                lines.append(f"[{i}] [内容已过滤 - 包含不适合展示的成人内容]")
-                print(f"[WARNING] 过滤敏感内容 in get_style_examples: {text[:100]}...")
-            else:
-                lines.append(f"[{i}] {text}")
-                clean_hits += 1
-
-        # 如果所有内容都被过滤了，返回特定提示
-        if clean_hits == 0:
-            return "找到了一些文风范例，但都包含不适合直接展示的成人内容。建议上传更健康、适合创作的素材。"
-
+            lines.append(f"[{i}] {h['text']}")
         return "\n".join(lines)
 
     # ──────────────────────────────────────────────

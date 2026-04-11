@@ -221,9 +221,8 @@ novel-ide-fast/                    # 项目根目录 / Project root
 
 ## 📞 支持 / Support
 
-- **问题报告**: [GitHub Issues](https://github.com/yourusername/novel-ide-fast/issues)
-- **讨论**: [GitHub Discussions](https://github.com/yourusername/novel-ide-fast/discussions)
-- **邮件**: your-email@example.com (可选 / optional)
+- **个人博客**: [个人博客](https://shystab.github.io/) 
+- **邮件**: 213243859@seu.edu.cn (可选 / optional)
 
 ---
 

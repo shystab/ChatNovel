@@ -1,0 +1,102 @@
+# ============================================
+# Root .gitignore for Novel IDE (Fast)
+# ============================================
+
+# Python (Backend)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+backend/venv/
+
+# Node.js (Frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+backend/*.db
+backend/novel_ide.db
+backend/execise.db
+
+# Environment variables
+.env
+.env.local
+.env.*
+!.env.example
+my-frontend/.env.local
+
+# Logs
+*.log
+
+# ChromeDB vector store
+.chroma/
+
+# Claude working directory
+.claude/
+
+# Testing
+coverage/
+
+# Vercel
+.vercel
+
+# Certificates
+*.pem
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+Desktop.ini

@@ -72,7 +72,7 @@ backend/execise.db
 .env.local
 .env.*
 !.env.example
-my-frontend/.env.local
+frontend/.env.local
 
 # Logs
 *.log

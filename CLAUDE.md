@@ -31,7 +31,7 @@ pip install -r requirements.txt
 ### Frontend (Next.js)
 
 ```bash
-cd my-frontend
+cd frontend
 npm run dev     # Development server on http://localhost:3000
 npm run build   # Production build
 npm start       # Start production server
@@ -40,7 +40,7 @@ npm run lint    # Run ESLint
 
 **Dependencies:**
 ```bash
-cd my-frontend
+cd frontend
 npm install
 ```
 
@@ -83,7 +83,7 @@ npm install
 - Main config class: `app.core.config.Settings` (Pydantic V2)
 - Supports DeepSeek and OpenAI API providers
 
-### Frontend Structure (`my-frontend/`)
+### Frontend Structure (`frontend/`)
 
 **Architecture:**
 - Next.js 16 App Router (NOT the old Pages Router)
@@ -172,12 +172,12 @@ The knowledge service implements RAG to inject user-uploaded references into AI 
 Configuration:
 - [`backend/app/core/config.py`](backend/app/core/config.py) - All settings (API keys, models, DB)
 - [`backend/.env`](backend/.env) - Environment variables
-- [`my-frontend/.env.local`](my-frontend/.env.local) - Frontend env vars
+- [`frontend/.env.local`](frontend/.env.local) - Frontend env vars
 
 API Layer:
 - [`backend/app/main.py`](backend/app/main.py) - FastAPI app entry point
 - [`backend/app/api/v1/endpoints/ai.py`](backend/app/api/v1/endpoints/ai.py) - AI writing endpoints
-- [`my-frontend/lib/api.ts`](my-frontend/lib/api.ts) - Frontend API client
+- [`frontend/lib/api.ts`](frontend/lib/api.ts) - Frontend API client
 
 AI Services:
 - [`backend/app/services/ai_service.py`](backend/app/services/ai_service.py) - Core AI logic
@@ -185,6 +185,6 @@ AI Services:
 - [`backend/app/services/knowledge_service.py`](backend/app/services/knowledge_service.py) - RAG implementation
 
 Main UI:
-- [`my-frontend/app/page.tsx`](my-frontend/app/page.tsx) - Main IDE page
-- [`my-frontend/components/ai-chat.tsx`](my-frontend/components/ai-chat.tsx) - AI chat interface
-- [`my-frontend/components/novel-editor.tsx`](my-frontend/components/novel-editor.tsx) - Text editor
+- [`frontend/app/page.tsx`](frontend/app/page.tsx) - Main IDE page
+- [`frontend/components/ai-chat.tsx`](frontend/components/ai-chat.tsx) - AI chat interface
+- [`frontend/components/novel-editor.tsx`](frontend/components/novel-editor.tsx) - Text editor

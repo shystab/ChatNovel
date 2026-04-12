@@ -48,7 +48,7 @@
 - **Sentence Transformers** - 文本嵌入 / Text embeddings
 - **DeepSeek/OpenAI** - AI提供商抽象 / AI provider abstraction
 
-### 前端 (`my-frontend/`) / Frontend
+### 前端 (`frontend/`) / Frontend
 - **Next.js 16** - 带App Router的React框架 / React framework with App Router
 - **React 19** - 最新的React功能 / Latest React features
 - **TypeScript** - 类型安全的开发 / Type-safe development
@@ -81,7 +81,7 @@ source venv/Scripts/activate
 pip install -r requirements.txt
 
 # 前端设置 / Frontend setup
-cd ../my-frontend
+cd ../frontend
 npm install
 ```
 
@@ -93,7 +93,7 @@ cp .env.example .env
 # 使用你的API密钥编辑.env / Edit .env with your API keys
 
 # 前端环境 / Frontend environment
-cd ../my-frontend
+cd ../frontend
 cp .env.local.example .env.local
 # 根据需要编辑 / Edit as needed
 ```
@@ -106,7 +106,7 @@ source venv/Scripts/activate  # 激活虚拟环境 / Activate virtual environmen
 python -m uvicorn app.main:app --reload --port 8000
 
 # 终端2: 前端 / Terminal 2: Frontend
-cd my-frontend
+cd frontend
 npm run dev
 ```
 
@@ -168,7 +168,7 @@ novel-ide-fast/                    # 项目根目录 / Project root
 │   │   └── services/            # 业务逻辑 / Business logic
 │   ├── .env                     # 环境变量 / Environment variables
 │   └── requirements.txt         # Python依赖 / Python dependencies
-├── my-frontend/                 # Next.js前端 / Next.js frontend
+├── frontend/                    # Next.js前端 / Next.js frontend
 │   ├── app/                     # App Router页面 / App Router pages
 │   ├── components/              # React组件 / React components
 │   ├── lib/                     # 工具库 / Utilities

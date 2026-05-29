@@ -436,6 +436,7 @@ class AIService:
                     traceback.print_exc()
                     raise
                     return
+                return  # 工具调用后续写完成后直接返回，不再执行下面的普通对话逻辑
         except json.JSONDecodeError:
             # 不是 tool_calls，说明 AI 直接回复了文本
             print(f"[DEBUG] response_str is not JSON, treating as direct reply: {response_str[:200]}")

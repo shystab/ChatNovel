@@ -1,0 +1,215 @@
+import {
+  Chapter,
+  ChapterCreate,
+  ChapterUpdate,
+  Book,
+  BookCreate,
+  BookUpdate,
+  Conversation,
+  ConversationCreate,
+  ConversationUpdate,
+  Settings,
+  SettingsUpdate,
+  KnowledgeBase,
+  AIRewriteRequest,
+  AIRewriteResponse,
+  AICheckRequest,
+  AICheckResponse,
+  AIPlotRequest,
+  AIPlotResponse,
+  Persona,
+  PersonaCreate,
+  PersonaUpdate,
+} from "@/types/api";
+
+const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
+const USER_ID = "default_user";
+const PROJECT_ID = "default_project";
+
+async function req<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  // 204 No Content
+  if (res.status === 204) return undefined as unknown as T;
+  return res.json();
+}
+
+export const api = {
+  // ── Books ──────────────────────────────────────
+  listBooks: () => req<Book[]>(`${BASE}/books/`),
+  getBook: (id: number) => req<Book>(`${BASE}/books/${id}`),
+  createBook: (book: BookCreate) =>
+    req<Book>(`${BASE}/books/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(book),
+    }),
+  updateBook: (id: number, book: BookUpdate) =>
+    req<Book>(`${BASE}/books/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(book),
+    }),
+  deleteBook: (id: number) =>
+    req<void>(`${BASE}/books/${id}`, { method: "DELETE" }),
+
+  // ── Chapters (书籍作用域) ───────────────────────
+  listChapters: (bookId: number) =>
+    req<Chapter[]>(`${BASE}/books/${bookId}/chapters/`),
+  getChapterInBook: (bookId: number, chapterId: number) =>
+    req<Chapter>(`${BASE}/books/${bookId}/chapters/${chapterId}`),
+  createChapterInBook: (bookId: number, chapter: ChapterCreate) =>
+    req<Chapter>(`${BASE}/books/${bookId}/chapters/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(chapter),
+    }),
+  updateChapterInBook: (bookId: number, chapterId: number, chapter: ChapterUpdate) =>
+    req<Chapter>(`${BASE}/books/${bookId}/chapters/${chapterId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(chapter),
+    }),
+  deleteChapterInBook: (bookId: number, chapterId: number) =>
+    req<void>(`${BASE}/books/${bookId}/chapters/${chapterId}`, { method: "DELETE" }),
+
+  // ── Chapters (旧接口，向后兼容) ────────────────
+  getChapters: () => req<Chapter[]>(`${BASE}/chapters/`),
+  getChapter: (id: number) => req<Chapter>(`${BASE}/chapters/${id}`),
+  createChapter: (chapter: ChapterCreate) =>
+    req<Chapter>(`${BASE}/chapters/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(chapter),
+    }),
+  updateChapter: (id: number, chapter: ChapterUpdate) =>
+    req<Chapter>(`${BASE}/chapters/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(chapter),
+    }),
+  deleteChapter: (id: number) =>
+    req<void>(`${BASE}/chapters/${id}`, { method: "DELETE" }),
+
+  // ── Conversations ──────────────────────────────
+  listConversations: () => req<Conversation[]>(`${BASE}/conversations/`),
+  getConversation: (id: number) => req<Conversation>(`${BASE}/conversations/${id}`),
+  createConversation: (data: ConversationCreate) =>
+    req<Conversation>(`${BASE}/conversations/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateConversation: (id: number, data: ConversationUpdate) =>
+    req<Conversation>(`${BASE}/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  deleteConversation: (id: number) =>
+    req<void>(`${BASE}/conversations/${id}`, { method: "DELETE" }),
+  updateConversationDocs: (id: number, docIds: number[]) =>
+    req<Conversation>(`${BASE}/conversations/${id}/docs`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(docIds),
+    }),
+
+  // ── Export ────────────────────────────────────
+  exportTxt: () => { window.location.href = `${BASE}/chapters/export/txt`; },
+  exportDocx: () => { window.location.href = `${BASE}/chapters/export/docx`; },
+
+  // ── Settings ──────────────────────────────────
+  getSettings: () => req<Settings>(`${BASE}/settings/`),
+  updateSettings: (s: SettingsUpdate) =>
+    req<Settings>(`${BASE}/settings/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(s),
+    }),
+
+  // ── Knowledge Base ────────────────────────────
+  getKnowledgeBases: () =>
+    req<{items: KnowledgeBase[], total: number}>(`${BASE}/knowledge/documents?user_id=${USER_ID}&project_id=${PROJECT_ID}`)
+      .then(res => res.items),
+
+  uploadKnowledgeBase: async (file: File) => {
+    const text = await file.text();
+    return req<{document_id: number, chunks: number}>(`${BASE}/knowledge/upload/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: USER_ID,
+        project_id: PROJECT_ID,
+        title: file.name,
+        text: text
+      }),
+    });
+  },
+
+  deleteKnowledgeBase: (id: number) =>
+    req<void>(`${BASE}/knowledge/documents/${id}`, { method: "DELETE" }),
+
+  searchKnowledge: (query: string, topK: number = 5) =>
+    req<{results: Array<{text: string, score: number}>}>(`${BASE}/knowledge/search?user_id=${USER_ID}&project_id=${PROJECT_ID}&q=${encodeURIComponent(query)}&top_k=${topK}`),
+
+  // ── AI Tools ──────────────────────────────────
+  rewrite: (data: AIRewriteRequest) =>
+    req<AIRewriteResponse>(`${BASE}/ai/rewrite/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  checkGrammar: (data: AICheckRequest) =>
+    req<AICheckResponse>(`${BASE}/ai/check/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  suggestPlot: (data: AIPlotRequest) =>
+    req<AIPlotResponse>(`${BASE}/ai/plot/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  // ── Persona (人格预设) ─────────────────────────
+  listPersonas: () =>
+    req<Persona[]>(`${BASE}/memory/presets?user_id=${USER_ID}&project_id=${PROJECT_ID}`),
+
+  createPersona: (data: PersonaCreate) =>
+    req<Persona>(`${BASE}/memory/presets/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  updatePersona: (id: number, data: PersonaUpdate) =>
+    req<Persona>(`${BASE}/memory/presets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+
+  enablePersona: (id: number) =>
+    req<Persona>(
+      `${BASE}/memory/presets/${id}/enable?user_id=${USER_ID}&project_id=${PROJECT_ID}`,
+      { method: "POST" }
+    ),
+
+  disableAllPersonas: () =>
+    req<void>(
+      `${BASE}/memory/presets/disable-all?user_id=${USER_ID}&project_id=${PROJECT_ID}`,
+      { method: "POST" }
+    ),
+
+  deletePersona: (id: number) =>
+    req<void>(`${BASE}/memory/presets/${id}?user_id=${USER_ID}`, { method: "DELETE" }),
+
+  getEnabledPersona: () =>
+    req<Persona | null>(`${BASE}/memory/preset?user_id=${USER_ID}&project_id=${PROJECT_ID}`),
+};

@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!frontend/lib/
+!frontend/lib/**
 parts/
 sdist/
 var/
@@ -72,7 +74,9 @@ backend/execise.db
 .env.local
 .env.*
 !.env.example
+!.env.local.example
 frontend/.env.local
+!frontend/.env.local.example
 
 # Logs
 *.log

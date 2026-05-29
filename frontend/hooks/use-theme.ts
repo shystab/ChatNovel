@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export type Theme = "light" | "dark" | "sepia";
 
@@ -39,18 +39,15 @@ const themes: Record<Theme, ThemeColors> = {
 };
 
 export function useTheme() {
-  const [theme, setThemeState] = useState<Theme>("light");
-
-  useEffect(() => {
-    const saved = localStorage.getItem("app-theme") as Theme;
-    if (saved && themes[saved]) {
-      setThemeState(saved);
-    }
-  }, []);
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = window.localStorage.getItem("app-theme") as Theme | null;
+    return saved && themes[saved] ? saved : "light";
+  });
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem("app-theme", newTheme);
+    window.localStorage.setItem("app-theme", newTheme);
   };
 
   return {

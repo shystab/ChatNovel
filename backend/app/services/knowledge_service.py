@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
-from typing import Iterable
+from typing import Iterable, TYPE_CHECKING
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from sentence_transformers import SentenceTransformer
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 
 def _chunk_text(text: str, max_chars: int = 800, overlap: int = 100) -> list[str]:
@@ -51,6 +53,8 @@ class KnowledgeService:
         os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
         os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
         try:
+            from sentence_transformers import SentenceTransformer
+
             self.embedding_model: SentenceTransformer | None = SentenceTransformer(
                 model_name, local_files_only=True
             )
@@ -99,6 +103,24 @@ class KnowledgeService:
         embeddings = self.embedding_model.encode(texts, normalize_embeddings=True).tolist()
         col.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
         return len(ids)
+
+    def delete_document_chunks(self, *, user_id: str, project_id: str, chunk_ids: Iterable[int]) -> int:
+        ids = [f"chunk:{chunk_id}" for chunk_id in chunk_ids]
+        if not ids:
+            return 0
+
+        deleted = 0
+        for collection_name in (
+            self._external_collection_name(user_id, project_id),
+            self._collection_name(user_id, project_id),
+        ):
+            try:
+                col = self.client.get_collection(collection_name)
+                col.delete(ids=ids)
+                deleted += len(ids)
+            except Exception:
+                continue
+        return deleted
 
     def search(self, *, user_id: str, project_id: str, query: str, top_k: int = 5) -> list[dict]:
         """旧版搜索（保持兼容性）"""

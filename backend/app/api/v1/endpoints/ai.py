@@ -92,26 +92,34 @@ async def ai_suggest(
 
 @router.post("/rewrite")
 async def ai_rewrite(
-    text: str = Body(..., embed=True),
+    text: str | None = Body(None, embed=True),
+    content: str | None = Body(None, embed=True),
     style: str = Body("清晰流畅", embed=True),
     session: Session = Depends(get_session),
 ):
     if not check_api_key(session):
         raise HTTPException(status_code=400, detail=f"请先配置 {settings.AI_PROVIDER.upper()}_API_KEY")
     ai_service = get_ai_service(session)
-    result = ai_service.rewrite_text(text, style)
-    return {"rewritten": result, "reason": f"风格：{style}"}
+    source_text = text if text is not None else content
+    if not source_text:
+        raise HTTPException(status_code=422, detail="text or content is required")
+    result = ai_service.rewrite_text(source_text, style)
+    return {"rewritten": result, "rewritten_content": result, "reason": f"风格：{style}"}
 
 
 @router.post("/check")
 async def ai_check(
-    text: str = Body(..., embed=True),
+    text: str | None = Body(None, embed=True),
+    content: str | None = Body(None, embed=True),
     session: Session = Depends(get_session),
 ):
     if not check_api_key(session):
         raise HTTPException(status_code=400, detail=f"请先配置 {settings.AI_PROVIDER.upper()}_API_KEY")
     ai_service = get_ai_service(session)
-    result_str = ai_service.check_grammar(text)
+    source_text = text if text is not None else content
+    if not source_text:
+        raise HTTPException(status_code=422, detail="text or content is required")
+    result_str = ai_service.check_grammar(source_text)
     # 解析 JSON，若失败则返回原始字符串
     try:
         import json
@@ -123,13 +131,18 @@ async def ai_check(
 
 @router.post("/plot")
 async def ai_plot(
-    description: str = Body(..., embed=True),
+    description: str | None = Body(None, embed=True),
+    genre: str | None = Body(None, embed=True),
+    keywords: list[str] | None = Body(None, embed=True),
     session: Session = Depends(get_session),
 ):
     if not check_api_key(session):
         raise HTTPException(status_code=400, detail=f"请先配置 {settings.AI_PROVIDER.upper()}_API_KEY")
     ai_service = get_ai_service(session)
-    result_str = ai_service.suggest_plot(description)
+    plot_description = description or " ".join([genre or "", " ".join(keywords or [])]).strip()
+    if not plot_description:
+        raise HTTPException(status_code=422, detail="description, genre, or keywords is required")
+    result_str = ai_service.suggest_plot(plot_description)
     try:
         import json
         result = json.loads(result_str)

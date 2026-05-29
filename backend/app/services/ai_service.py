@@ -3,7 +3,7 @@ AI 服务层 - 通用 AI 服务（工具调用版）
 """
 import json
 import re
-from typing import List, Generator
+from typing import List
 
 from sqlmodel import Session
 from openai.types.chat import ChatCompletionMessageParam
@@ -536,6 +536,75 @@ class AIService:
             result["signals"]["repetition"] = [{"token": k, "count": v} for k, v in top if v >= 3]
 
         return result
+
+    def continue_writing(
+        self,
+        *,
+        content: str,
+        max_length: int = 200,
+        current_chapter_id: int | None = None,
+        book_id: int | None = None,
+        user_id: str = "default_user",
+        project_id: str = "default_project",
+        use_memory: bool = True,
+    ):
+        context = self.build_layered_memory_context(
+            current_chapter_id=current_chapter_id,
+            current_content=content,
+            user_id=user_id,
+            project_id=project_id,
+            book_id=book_id,
+            use_memory_summary=use_memory,
+            use_external_rag=False,
+            use_chapter_rag=True,
+        )
+        prompt = (
+            "Continue the novel text directly. Match the original tone and do not add explanations.\n\n"
+            f"{context or content}"
+        )
+        gen_config = self._get_generation_config()
+        yield from self.provider.stream_chat(
+            messages=self._create_messages(DEFAULT_WRITER_PERSONA, prompt),
+            temperature=gen_config["temperature"],
+            max_tokens=max(max_length, gen_config["max_tokens"]),
+        )
+
+    def rewrite_text(self, text: str, style: str = "clear and fluent") -> str:
+        prompt = (
+            f"Rewrite the following text in this style: {style}.\n"
+            "Return only the rewritten text, with no explanation.\n\n"
+            f"{text}"
+        )
+        gen_config = self._get_generation_config()
+        return self.provider.chat(
+            messages=self._create_messages(DEFAULT_WRITER_PERSONA, prompt),
+            temperature=gen_config["temperature"],
+            max_tokens=gen_config["max_tokens"],
+        )
+
+    def check_grammar(self, text: str) -> str:
+        prompt = (
+            "Check the following prose for grammar, style, continuity, and wording issues. "
+            "Return strict JSON with this shape: {\"issues\": [\"...\"], \"suggestions\": [\"...\"]}.\n\n"
+            f"{text}"
+        )
+        return self.provider.chat(
+            messages=self._create_messages(DEFAULT_WRITER_PERSONA, prompt),
+            temperature=0.2,
+            max_tokens=1000,
+        )
+
+    def suggest_plot(self, description: str) -> str:
+        prompt = (
+            "Generate concise plot suggestions for a novel. "
+            "Return strict JSON with this shape: {\"suggestions\": [\"...\", \"...\", \"...\"]}.\n\n"
+            f"{description}"
+        )
+        return self.provider.chat(
+            messages=self._create_messages(DEFAULT_WRITER_PERSONA, prompt),
+            temperature=0.8,
+            max_tokens=1200,
+        )
 
     # ──────────────────────────────────────────────
     # 章节摘要生成

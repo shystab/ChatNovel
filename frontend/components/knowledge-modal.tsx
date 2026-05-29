@@ -16,8 +16,6 @@ import {
 interface KnowledgeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  theme?: any;
-  colors?: any;
 }
 
 export default function KnowledgeModal({ isOpen, onClose }: KnowledgeModalProps) {

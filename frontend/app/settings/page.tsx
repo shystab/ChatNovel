@@ -523,7 +523,7 @@ export default function SettingsPage() {
                       <div className="p-4 bg-white/10 backdrop-blur-xl rounded-2xl"><AlertCircle size={32} /></div>
                       <div>
                         <h3 className="font-bold text-lg mb-1">隐私承诺</h3>
-                        <p className="text-slate-200 text-sm leading-relaxed">VibeWriter 是"本地优先"的 IDE。除向您选择的 AI 服务商发送必要的提示词外，所有写作内容均仅存储在本地。</p>
+                        <p className="text-slate-200 text-sm leading-relaxed">VibeWriter 是&quot;本地优先&quot;的 IDE。除向您选择的 AI 服务商发送必要的提示词外，所有写作内容均仅存储在本地。</p>
                       </div>
                     </div>
                     <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl" />

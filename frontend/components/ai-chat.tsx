@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { api } from "@/lib/api";
 import { Send, ArrowLeftRight, Sparkles, RotateCcw, ChevronDown, User, PanelRightClose, Library, Trash2 } from "lucide-react";
@@ -66,6 +66,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
 
   // ── 对话持久化（后端） ────────────────────────────
   const convIdRef = useRef<number | null>(null);
+  const [currentConversationId, setCurrentConversationId] = useState<number | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationTitle, setConversationTitle] = useState("新对话");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -76,6 +77,23 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
 
   const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const list = await api.listConversations();
+      setConversations(list);
+    } catch {}
+  }, []);
+
+  const loadPresets = useCallback(async () => {
+    try {
+      const res = await fetch(`${BASE}/presets/`);
+      const data: PresetListResponse = await res.json();
+      setPresets(data.items);
+      const enabled = data.items.find(p => p.is_enabled);
+      if (enabled) setSelectedPresetId(enabled.id);
+    } catch {}
+  }, [BASE]);
 
   // 启动时：从后端恢复对话
   useEffect(() => {
@@ -88,6 +106,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
           if (conv && conv.messages?.length > 0) {
             setMessages(conv.messages as Message[]);
             convIdRef.current = conv.id;
+            setCurrentConversationId(conv.id);
             setConversationTitle(conv.title || "新对话");
             setSelectedDocIds(conv.selected_doc_ids ?? []);
             await loadConversations();
@@ -101,6 +120,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
       try {
         const conv = await api.createConversation({ title: "新对话", user_id: "default_user" });
         convIdRef.current = conv.id;
+        setCurrentConversationId(conv.id);
         setConversationTitle(conv.title || "新对话");
         localStorage.setItem(CONV_ID_KEY, String(conv.id));
         await loadConversations();
@@ -111,14 +131,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
       }
     }
     void initConversation();
-  }, []);
-
-  const loadConversations = async () => {
-    try {
-      const list = await api.listConversations();
-      setConversations(Array.isArray(list) ? list : (list as any).items ?? []);
-    } catch {}
-  };
+  }, [loadConversations]);
 
   const switchConversation = async (conv: Conversation) => {
     setShowConvDropdown(false);
@@ -127,6 +140,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
       const msgs = (full.messages ?? []) as Message[];
       setMessages(msgs);
       convIdRef.current = full.id;
+      setCurrentConversationId(full.id);
       setConversationTitle(full.title || "新对话");
       setSelectedDocIds(full.selected_doc_ids ?? []);
       localStorage.setItem(CONV_ID_KEY, String(full.id));
@@ -159,17 +173,9 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
     }
   };
 
-  useEffect(() => { loadPresets(); }, []);
-
-  const loadPresets = async () => {
-    try {
-      const res = await fetch(`${BASE}/presets/`);
-      const data: PresetListResponse = await res.json();
-      setPresets(data.items);
-      const enabled = data.items.find(p => p.is_enabled);
-      if (enabled) setSelectedPresetId(enabled.id);
-    } catch {}
-  };
+  useEffect(() => {
+    void Promise.resolve().then(loadPresets);
+  }, [loadPresets]);
 
   const scrollToBottom = () => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -397,6 +403,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
     try {
       const conv = await api.createConversation({ title: "新对话", user_id: "default_user" });
       convIdRef.current = conv.id;
+      setCurrentConversationId(conv.id);
       setConversationTitle(conv.title || "新对话");
       localStorage.setItem(CONV_ID_KEY, String(conv.id));
       await loadConversations();
@@ -507,7 +514,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
                   <div key={conv.id} className="relative group">
                     <button
                       onClick={() => switchConversation(conv)}
-                      className={`w-full px-3 py-2.5 pr-8 text-left ${dropdownItemHover} transition-colors ${conv.id === convIdRef.current ? (theme === 'dark' ? 'bg-slate-700' : 'bg-blue-50') : ''}`}
+                      className={`w-full px-3 py-2.5 pr-8 text-left ${dropdownItemHover} transition-colors ${conv.id === currentConversationId ? (theme === 'dark' ? 'bg-slate-700' : 'bg-blue-50') : ''}`}
                       type="button"
                     >
                       <div className={`text-xs font-semibold truncate ${headingClass}`}>{conv.title || "新对话"}</div>
@@ -625,7 +632,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
       </header>
 
       <DocumentSelector
-        conversationId={convIdRef.current}
+        conversationId={currentConversationId}
         isOpen={showDocSelector}
         onClose={() => setShowDocSelector(false)}
         initialSelectedIds={selectedDocIds}

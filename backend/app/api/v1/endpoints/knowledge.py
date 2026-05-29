@@ -119,7 +119,11 @@ def delete_document(
         ks = get_knowledge_service()
         if chunk_ids:
             # ChromaDB 删除需要字符串 ID
-            ks.collection.delete(ids=[f"chunk_{cid}" for cid in chunk_ids])
+            ks.delete_document_chunks(
+                user_id=doc.user_id,
+                project_id=doc.project_id,
+                chunk_ids=chunk_ids,
+            )
     except Exception as e:
         print(f"Warning: Failed to delete from vector DB: {e}")
 

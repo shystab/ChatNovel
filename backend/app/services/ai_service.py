@@ -96,62 +96,6 @@ WRITING_TOOLS = [
                 "required": ["query"]
             }
         }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "continue_writing",
-            "description": "根据当前写作内容生成续写。当用户要求续写、接着写、继续写时调用此工具。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "max_length": {"type": "integer", "description": "续写长度（字数）", "default": 200}
-                }
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "rewrite_text",
-            "description": "改写用户选中的文本。参数text为原文，style可选（如“更流畅”）。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "要改写的原文"},
-                    "style": {"type": "string", "description": "改写风格", "default": "清晰流畅"}
-                },
-                "required": ["text"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "check_grammar",
-            "description": "检查文本的语法和风格问题，返回 JSON。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "要检查的文本"}
-                },
-                "required": ["text"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "suggest_plot",
-            "description": "根据用户描述生成情节建议。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "description": {"type": "string", "description": "用户的需求或背景"}
-                },
-                "required": ["description"]
-            }
-        }
     }
 ]
 
@@ -245,11 +189,13 @@ class AIService:
             lines.append(f"【{prefix}】《{title}》：{summary}")
         return "附近章节摘要：\n" + "\n".join(lines)
 
-    def search_my_chapters(self, query: str, book_id: int) -> str:
+    def search_my_chapters(self, query: str, user_id: str, book_id: int | None) -> str:
         """全书章节检索"""
+        if not book_id:
+            return "当前没有可检索的书籍上下文。"
         ks = get_knowledge_service()
         hits = ks.search_chapters(
-            user_id="default_user",  # 可根据实际传入user_id
+            user_id=user_id,
             book_id=book_id,
             query=query,
             top_k=5
@@ -261,15 +207,22 @@ class AIService:
             lines.append(f"[{i}] {h['text']}")
         return "\n".join(lines)
 
-    def search_external_reference(self, query: str, project_id: str) -> str:
+    def search_external_reference(
+        self,
+        query: str,
+        user_id: str,
+        project_id: str,
+        selected_doc_ids: list[int] | None = None,
+    ) -> str:
         """外部参考章节检索"""
         ks = get_knowledge_service()
         hits = ks.search_external(
-            user_id="default_user",
+            user_id=user_id,
             project_id=project_id,
             query=query,
             top_k=5,
-            weight=30
+            weight=30,
+            document_ids=selected_doc_ids,
         )
         if not hits:
             return f"未找到与'{query}'相关的外部参考内容。"
@@ -279,15 +232,22 @@ class AIService:
             lines.append(f"[{i}] {h['text']}")
         return "\n".join(lines)
 
-    def get_style_examples(self, query: str, project_id: str) -> str:
+    def get_style_examples(
+        self,
+        query: str,
+        user_id: str,
+        project_id: str,
+        selected_doc_ids: list[int] | None = None,
+    ) -> str:
         """文风仿写检索"""
         ks = get_knowledge_service()
         hits = ks.search_external(
-            user_id="default_user",
+            user_id=user_id,
             project_id=project_id,
             query=query,
             top_k=5,
-            weight=30
+            weight=30,
+            document_ids=selected_doc_ids,
         )
         if not hits:
             return f"未找到与'{query}'相关的文风范例。"
@@ -311,6 +271,7 @@ class AIService:
         current_chapter_id: int | None = None,
         book_id: int | None = None,
         current_content: str = "",
+        selected_doc_ids: list[int] | None = None,
     ):
         # 构建基础 system prompt
         persona = self._get_persona(user_id, project_id)
@@ -329,7 +290,9 @@ class AIService:
         # 添加可用工具说明，帮助AI知道何时调用RAG工具
         tool_instructions = """
 【可用工具说明】
-你可以使用以下工具获取更多信息来更好地协助用户：
+用户会直接用自然语言提出续写、改写、检查、情节建议或普通问答需求。你不需要等待前端指令，也不要输出“需要调用某某写作工具”的说明；请根据用户意图直接完成写作任务。
+
+你可以使用以下信息工具获取更多上下文来更好地协助用户：
 
 1. get_current_chapter - 获取用户当前正在编辑的章节全文。当用户询问当前章节内容、要求续写或修改时调用。
 
@@ -343,12 +306,14 @@ class AIService:
 
 使用指南：
 - 当用户询问当前章节内容时，调用 get_current_chapter
+- 当用户要求续写、改写或检查当前章节，并且当前编辑器内容不足以判断上下文时，调用 get_current_chapter
 - 当用户需要了解情节发展时，调用 get_nearby_chapters_summary
 - 当用户需要搜索全书相关内容时，调用 search_my_chapters
 - 当用户需要参考外部素材、范例或灵感时，调用 search_external_reference
 - 当用户需要文风模仿参考时，调用 get_style_examples
 - 可以组合使用多个工具来获取全面信息
 - 如果你不确定用户需要什么信息，可以先调用相关工具获取上下文再回答
+- 工具只用于补充上下文；最终的续写、改写、检查、情节建议都由你在最终回复中直接生成
 """
         system_content = f"{system_content}\n{tool_instructions}"
 
@@ -414,13 +379,13 @@ class AIService:
                             result = self.get_nearby_chapters_summary(current_chapter_id)
                         elif tool_name == "search_my_chapters":
                             query = args.get("query", "")
-                            result = self.search_my_chapters(query, book_id)
+                            result = self.search_my_chapters(query, user_id, book_id)
                         elif tool_name == "search_external_reference":
                             query = args.get("query", "")
-                            result = self.search_external_reference(query, project_id)
+                            result = self.search_external_reference(query, user_id, project_id, selected_doc_ids)
                         elif tool_name == "get_style_examples":
                             query = args.get("query", "")
-                            result = self.get_style_examples(query, project_id)
+                            result = self.get_style_examples(query, user_id, project_id, selected_doc_ids)
                         else:
                             result = f"未知工具: {tool_name}"
                     except Exception as e:
@@ -483,6 +448,7 @@ class AIService:
         use_external: bool = True,
         use_chapters: bool = True,
         external_weight: int = 30,
+        selected_doc_ids: list[int] | None = None,
     ) -> str:
         """构建统一 RAG 上下文，区分外部知识库和全书章节"""
         if not query:
@@ -499,6 +465,7 @@ class AIService:
                 query=query,
                 top_k=top_k,
                 weight=external_weight,
+                document_ids=selected_doc_ids,
             )
             if ext_hits:
                 lines.append("【外部风格/事实参考（严禁直接复制原文，仅可借鉴风格、用词和设定）】")

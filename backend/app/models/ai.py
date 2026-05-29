@@ -22,6 +22,7 @@ class AIWSRequest(SQLModel):
     project_id: str = Field(default="default_project")
     current_chapter_id: int | None = Field(default=None)
     book_id: int | None = Field(default=None)
+    selected_doc_ids: List[int] = Field(default_factory=list)
     content: str = Field(default="")
     use_memory: bool = Field(default=True)
     max_length: int = Field(default=500)

@@ -146,6 +146,7 @@ class KnowledgeService:
         query: str,
         top_k: int = 5,
         weight: int = 30,
+        document_ids: list[int] | None = None,
     ) -> list[dict]:
         """搜索外部知识库（带权重过滤）"""
         if self.embedding_model is None:
@@ -157,7 +158,8 @@ class KnowledgeService:
             # 回退到旧集合
             col = self.client.get_or_create_collection(self._collection_name(user_id, project_id))
         q_emb = self.embedding_model.encode([query], normalize_embeddings=True).tolist()
-        res = col.query(query_embeddings=q_emb, n_results=top_k, include=["documents", "metadatas", "distances"])
+        n_results = top_k * 4 if document_ids else top_k
+        res = col.query(query_embeddings=q_emb, n_results=n_results, include=["documents", "metadatas", "distances"])
 
         out: list[dict] = []
         docs = res.get("documents", [[]])[0]
@@ -167,8 +169,10 @@ class KnowledgeService:
             # 过滤掉 source_type 为 chapter 的条目
             if meta.get("source_type") == "chapter":
                 continue
+            if document_ids and meta.get("document_id") not in document_ids:
+                continue
             out.append({"text": doc, "meta": meta, "distance": dist})
-        return out
+        return out[:top_k]
 
     def search_chapters(
         self,

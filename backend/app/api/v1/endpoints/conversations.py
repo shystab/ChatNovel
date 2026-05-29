@@ -71,3 +71,19 @@ def delete_conversation(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     conversation_crud.delete_conversation(session, conv)
+
+
+@router.put("/{conversation_id}/docs", response_model=ConversationRead, summary="Update selected conversation documents")
+def update_conversation_docs(
+    conversation_id: Annotated[int, Path(ge=1)],
+    doc_ids: Annotated[list[int], Body()],
+    session: Annotated[Session, Depends(get_session)],
+):
+    conv = conversation_crud.get_conversation(session, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conversation_crud.update_conversation(
+        session,
+        conv,
+        ConversationUpdate(selected_doc_ids=doc_ids),
+    )

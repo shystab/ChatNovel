@@ -12,7 +12,7 @@ from docx.shared import Pt
 
 from app.db.session import get_session
 from app.models.chapters import ChapterCreate, ChapterUpdate, ChapterRead
-from app.crud.crud import get_chapter, get_chapters, create_chapter, update_chapter, delete_chapter, get_nearby_chapter_summaries
+from app.crud.crud import get_chapter, get_chapters, get_chapters_by_ids, create_chapter, update_chapter, delete_chapter, get_nearby_chapter_summaries
 from app.services.ai_service import get_ai_service
 from app.crud.settings_crud import get_settings
 from app.services.knowledge_service import get_knowledge_service, _chunk_text
@@ -95,6 +95,30 @@ async def generate_chapter_summary_background(
 router = APIRouter(responses={404: {"description": "Chapter not found"}})
 
 
+def _parse_chapter_ids(ids: str | None) -> list[int] | None:
+    if not ids:
+        return None
+    try:
+        parsed = [int(item.strip()) for item in ids.split(",") if item.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="ids must be comma-separated integers") from exc
+    if not parsed:
+        raise HTTPException(status_code=422, detail="ids cannot be empty")
+    return parsed
+
+
+def _get_export_chapters(session: Session, ids: str | None) -> list:
+    chapter_ids = _parse_chapter_ids(ids)
+    if chapter_ids is None:
+        return get_chapters(session, limit=1000)
+    chapters = get_chapters_by_ids(session, chapter_ids)
+    found_ids = {chapter.id for chapter in chapters}
+    missing_ids = [chapter_id for chapter_id in chapter_ids if chapter_id not in found_ids]
+    if missing_ids:
+        raise HTTPException(status_code=404, detail=f"Chapter(s) not found: {missing_ids}")
+    return chapters
+
+
 @router.get(
     "/export/txt",
     summary="导出全书为 TXT",
@@ -102,8 +126,9 @@ router = APIRouter(responses={404: {"description": "Chapter not found"}})
 )
 def export_txt(
     session: Annotated[Session, Depends(get_session)],
+    ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
 ):
-    chapters = get_chapters(session, limit=1000)
+    chapters = _get_export_chapters(session, ids)
     if not chapters:
         raise HTTPException(status_code=404, detail="No chapters found")
     
@@ -122,8 +147,9 @@ def export_txt(
 )
 def export_docx(
     session: Annotated[Session, Depends(get_session)],
+    ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
 ):
-    chapters = get_chapters(session, limit=1000)
+    chapters = _get_export_chapters(session, ids)
     if not chapters:
         raise HTTPException(status_code=404, detail="No chapters found")
     

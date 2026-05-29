@@ -40,21 +40,12 @@ interface AIChatProps {
   currentChapterId?: number | null;
 }
 
-const COMMANDS = [
-  { cmd: "/续写", label: "续写当前情节", icon: "✦" },
-  { cmd: "/改写", label: "润色选中文本", icon: "✧" },
-  { cmd: "/检查", label: "检查语法错误", icon: "✓" },
-  { cmd: "/情节", label: "提供情节建议", icon: "◈" },
-];
-
 const CONV_ID_KEY = "ai-conversation-id";
 
 export default function AIChat({ onInsertContent, getEditorContent, theme, colors: _colors, onToggleRight, bookId, chapters: _chapters = [], currentChapterId = null }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [showCommands, setShowCommands] = useState(false);
   const [isLoading] = useState(false);
-  const [useRag] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { isStreaming, connect } = useWebSocket();
@@ -220,7 +211,6 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
       // 确保 content 字段存在（用于工具调用）
       ...(currentEditorContent && !request.content ? { content: currentEditorContent } : {}),
     };
-    const task = request.task || "chat";
 
     connect(withExtras, {
       onToken: (token) => {
@@ -228,45 +218,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
         updateLastAiMessage(streamBufferRef.current, true);
       },
       onDone: () => {
-        let finalContent = streamBufferRef.current;
-
-        // 根据任务类型处理响应
-        if (task === "check") {
-          try {
-            // 尝试解析JSON
-            const jsonStart = finalContent.indexOf('{');
-            const jsonEnd = finalContent.lastIndexOf('}') + 1;
-            if (jsonStart >= 0 && jsonEnd > jsonStart) {
-              const jsonStr = finalContent.substring(jsonStart, jsonEnd);
-              const result = JSON.parse(jsonStr);
-              const issues = result.issues || [];
-              const suggestions = result.suggestions || [];
-              finalContent = issues.length > 0
-                ? `已检查 ${currentEditorContent.length} 字，发现 ${issues.length} 处问题：\n\n${issues.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}\n\n建议：\n${suggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`
-                : `✓ 已检查 ${currentEditorContent.length} 字，未发现明显语法问题，文章表达流畅。`;
-            }
-          } catch (e) {
-            // 解析失败，使用原始内容
-            console.error("Failed to parse check response:", e);
-          }
-        } else if (task === "plot") {
-          try {
-            // 尝试解析JSON
-            const jsonStart = finalContent.indexOf('{');
-            const jsonEnd = finalContent.lastIndexOf('}') + 1;
-            if (jsonStart >= 0 && jsonEnd > jsonStart) {
-              const jsonStr = finalContent.substring(jsonStart, jsonEnd);
-              const result = JSON.parse(jsonStr);
-              const suggestions = result.suggestions || [];
-              const contextInfo = currentEditorContent.length > 0
-                ? `基于当前内容（${currentEditorContent.length} 字），为你生成以下情节方向：\n\n`
-                : `以下是几个情节方向：\n\n`;
-              finalContent = contextInfo + suggestions.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n\n');
-            }
-          } catch (e) {
-            console.error("Failed to parse plot response:", e);
-          }
-        }
+        const finalContent = streamBufferRef.current;
 
         updateLastAiMessage(finalContent, false);
 
@@ -292,107 +244,26 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
     const newMessages: Message[] = [...messages, { role: "user", content: trimmed }];
     setMessages(newMessages);
     setInput("");
-    setShowCommands(false);
 
-    const editorContent = getEditorContent();
-
-    if (trimmed.startsWith("/续写")) {
-      startStream({
-        task: "suggest",
-        type: "suggest", // 向后兼容
-        content: editorContent,
-        max_length: 300,
-        use_rag: useRag,
-        use_memory: true,
-        use_layered_memory: true,
-        use_external_rag: false, // 续写默认不启用外部RAG
-        use_chapter_rag: true, // 续写默认启用全书检索
-        external_rag_weight: 30
-      });
-    } else if (trimmed.startsWith("/改写")) {
-      if (!editorContent?.trim()) {
-        setMessages(prev => {
-          const next = [...prev, { role: "ai" as const, content: "编辑器中没有内容可以改写。请先在编辑器中输入一些文字。", isStreaming: false }];
-          persistMessages(next);
-          return next;
-        });
-        return;
-      }
-      startStream({
-        task: "rewrite",
-        type: "chat", // 使用chat类型保持兼容
-        content: editorContent,
-        max_length: editorContent.length * 2, // 改写可能变长
-        use_memory: true,
-        use_layered_memory: true,
-        use_external_rag: false, // 改写通常不需要外部RAG
-        use_chapter_rag: true, // 但可能需要全书上下文保持风格一致
-        external_rag_weight: 30
-      });
-    } else if (trimmed.startsWith("/检查")) {
-      if (!editorContent?.trim()) {
-        setMessages(prev => {
-          const next = [...prev, { role: "ai" as const, content: "编辑器中没有内容可以检查。", isStreaming: false }];
-          persistMessages(next);
-          return next;
-        });
-        return;
-      }
-      startStream({
-        task: "check",
-        type: "chat",
-        content: editorContent,
-        max_length: 1000,
-        use_memory: true,
-        use_layered_memory: true,
-        use_external_rag: false,
-        use_chapter_rag: false, // 检查不需要章节上下文
-        external_rag_weight: 30
-      });
-    } else if (trimmed.startsWith("/情节")) {
-      // 提取关键词
-      const keywords = editorContent.length > 0
-        ? editorContent.split(/[，。！？\s]+/).filter(w => w.length >= 2).slice(0, 5)
-        : [];
-      const keywordText = keywords.length > 0 ? `关键词：${keywords.join('、')}` : "";
-      void keywordText;
-      startStream({
-        task: "plot",
-        type: "chat",
-        content: editorContent,
-        max_length: 800,
-        use_memory: true,
-        use_layered_memory: true,
-        use_external_rag: false,
-        use_chapter_rag: true, // 情节建议可能需要全书上下文
-        external_rag_weight: 30
-      });
-    } else {
-      const historyMessages = messages.map(m => ({ role: m.role === "ai" ? "assistant" : m.role, content: m.content }));
-      historyMessages.push({ role: "user", content: trimmed });
-      startStream({
-        task: "chat",
-        type: "chat",
-        messages: historyMessages,
-        max_length: 500,
-        use_memory: true,
-        use_layered_memory: false, // 普通对话默认不启用分层记忆
-        use_external_rag: false, // 默认不启用外部RAG
-        use_chapter_rag: true, // 默认启用全书检索
-        external_rag_weight: 30
-      });
-    }
+    const historyMessages = messages.map(m => ({
+      role: m.role === "ai" ? "assistant" : m.role,
+      content: m.content,
+    }));
+    historyMessages.push({ role: "user", content: trimmed });
+    startStream({
+      type: "chat",
+      messages: historyMessages,
+      max_length: 500,
+      use_memory: true,
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
-    if (e.key === "Escape") setShowCommands(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setInput(val);
-    setShowCommands(val === "/" || (val.startsWith("/") && !val.includes(" ")));
+    setInput(e.target.value);
   };
 
   const clearMessages = async () => {
@@ -412,8 +283,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
 
   const generateAutoTitle = async (firstUserMsg: string) => {
     if (!convIdRef.current) return;
-    // 去掉指令前缀（/续写、/改写 等）
-    let title = firstUserMsg.replace(/^\/[^\s]+\s*/, "").trim();
+    let title = firstUserMsg.trim();
     if (!title) title = firstUserMsg.trim();
     // 截取前 15 字
     if (title.length > 15) title = title.slice(0, 15) + "…";
@@ -649,21 +519,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
             </div>
             <div className="text-center space-y-1">
               <p className={`text-xs font-semibold ${textClass}`}>AI 写作助手</p>
-              <p className={`text-[10px] ${mutedClass}`}>输入 / 触发写作指令</p>
-            </div>
-            <div className="w-full space-y-1">
-              {COMMANDS.map(c => (
-                <button
-                  key={c.cmd}
-                  onClick={() => { setInput(c.cmd + " "); textareaRef.current?.focus(); }}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-xl ${hoverBgClass} transition-colors text-left group`}
-                  type="button"
-                >
-                  <span className={`${mutedClass} text-sm w-4 text-center`}>{c.icon}</span>
-                  <span className={`text-[10px] font-bold ${mutedClass} font-mono`}>{c.cmd}</span>
-                  <span className={`text-[10px] ${mutedClass} opacity-70`}>{c.label}</span>
-                </button>
-              ))}
+              <p className={`text-[10px] ${mutedClass}`}>输入你的写作需求</p>
             </div>
           </div>
         )}
@@ -705,38 +561,13 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
 
       {/* 输入区 */}
       <div className={`p-2.5 border-t ${inputAreaBg} relative shrink-0`}>
-        {/* 指令面板 */}
-        {showCommands && (
-          <div className={`absolute bottom-full left-2.5 right-2.5 ${dropdownBg} border rounded-2xl shadow-xl mb-2 overflow-hidden`}>
-            <div className={`px-3 py-2 border-b ${borderClass}`}>
-              <span className={`text-[9px] font-bold ${mutedClass} uppercase tracking-widest`}>写作指令</span>
-            </div>
-            {COMMANDS.map(c => (
-              <button
-                key={c.cmd}
-                onClick={() => { setInput(c.cmd + " "); setShowCommands(false); textareaRef.current?.focus(); }}
-                className={`w-full px-4 py-2.5 text-left ${dropdownItemHover} flex items-center space-x-3 transition-colors`}
-                type="button"
-              >
-                <span className={`${mutedClass} text-sm w-4 text-center`}>{c.icon}</span>
-                <span className={`text-xs font-bold ${headingClass} font-mono`}>{c.cmd}</span>
-                <span className={`text-xs ${mutedClass}`}>{c.label}</span>
-              </button>
-            ))}
-            <div className={`px-3 py-2 border-t ${borderClass} flex items-center justify-between`}>
-              <span className={`text-[9px] ${mutedClass}`}>或直接输入问题与 AI 对话</span>
-              <ChevronDown size={10} className={mutedClass} />
-            </div>
-          </div>
-        )}
-
         <div className="flex items-end space-x-2">
           <textarea
             ref={textareaRef}
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={busy ? "AI 正在思考…" : "输入消息或 / 触发指令"}
+            placeholder={busy ? "AI 正在思考…" : "输入写作需求或问题"}
             disabled={busy}
             rows={1}
             className={`flex-1 border rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all resize-none leading-relaxed disabled:opacity-50 ${inputBgClass}`}

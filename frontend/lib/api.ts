@@ -11,12 +11,6 @@ import {
   Settings,
   SettingsUpdate,
   KnowledgeBase,
-  AIRewriteRequest,
-  AIRewriteResponse,
-  AICheckRequest,
-  AICheckResponse,
-  AIPlotRequest,
-  AIPlotResponse,
   Persona,
   PersonaCreate,
   PersonaUpdate,
@@ -156,26 +150,6 @@ export const api = {
 
   searchKnowledge: (query: string, topK: number = 5) =>
     req<{results: Array<{text: string, score: number}>}>(`${BASE}/knowledge/search?user_id=${USER_ID}&project_id=${PROJECT_ID}&q=${encodeURIComponent(query)}&top_k=${topK}`),
-
-  // ── AI Tools ──────────────────────────────────
-  rewrite: (data: AIRewriteRequest) =>
-    req<AIRewriteResponse>(`${BASE}/ai/rewrite/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
-  checkGrammar: (data: AICheckRequest) =>
-    req<AICheckResponse>(`${BASE}/ai/check/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
-  suggestPlot: (data: AIPlotRequest) =>
-    req<AIPlotResponse>(`${BASE}/ai/plot/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
 
   // ── Persona (人格预设) ─────────────────────────
   listPersonas: () =>

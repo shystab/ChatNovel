@@ -47,14 +47,15 @@ def _fix_conversation_table(session: Session) -> None:
             user_id VARCHAR NOT NULL,
             title   VARCHAR NOT NULL DEFAULT '新对话',
             messages JSON,
+            selected_doc_ids JSON DEFAULT '[]',
             create_time DATETIME NOT NULL,
             update_time DATETIME NOT NULL,
             book_id INTEGER REFERENCES book(id)
         )
     """))  # type: ignore[call-overload]
     session.exec(text("""
-        INSERT INTO conversation_new (id, user_id, title, messages, create_time, update_time, book_id)
-        SELECT id, user_id, title, messages, create_time, update_time, NULL
+        INSERT INTO conversation_new (id, user_id, title, messages, selected_doc_ids, create_time, update_time, book_id)
+        SELECT id, user_id, title, messages, '[]', create_time, update_time, NULL
         FROM conversation
     """))  # type: ignore[call-overload]
     session.exec(text("DROP TABLE conversation"))  # type: ignore[call-overload]
@@ -96,6 +97,14 @@ def run_startup_migration(session: Session) -> None:
         session.exec(text("ALTER TABLE setting ADD COLUMN summary_generation_style VARCHAR DEFAULT 'concise'"))  # type: ignore[call-overload]
         session.commit()
         print("[Migration] Added summary_generation_style column to setting table")
+    except Exception:
+        session.rollback()
+
+    # Step 2.6: Add selected document IDs for conversations.
+    try:
+        session.exec(text("ALTER TABLE conversation ADD COLUMN selected_doc_ids JSON DEFAULT '[]'"))  # type: ignore[call-overload]
+        session.commit()
+        print("[Migration] Added selected_doc_ids column to conversation table")
     except Exception:
         session.rollback()
 

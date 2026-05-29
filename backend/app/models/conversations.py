@@ -13,6 +13,11 @@ class Conversation(SQLModel, table=True):
         sa_column=Column(JSON),
         description="对话消息列表",
     )]
+    selected_doc_ids: Annotated[list[int], Field(
+        default_factory=list,
+        sa_column=Column(JSON),
+        description="Selected knowledge document IDs",
+    )]
     create_time: Annotated[datetime, Field(default_factory=datetime.now)]
     update_time: Annotated[datetime, Field(default_factory=datetime.now)]
 
@@ -22,6 +27,7 @@ class ConversationRead(SQLModel):
     user_id: str
     title: str
     messages: list[dict[str, Any]]
+    selected_doc_ids: list[int]
     create_time: datetime
     update_time: datetime
 
@@ -34,3 +40,4 @@ class ConversationCreate(SQLModel):
 class ConversationUpdate(SQLModel):
     title: str | None = None
     messages: list[dict[str, Any]] | None = None
+    selected_doc_ids: list[int] | None = None

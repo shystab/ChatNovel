@@ -1,15 +1,13 @@
 """
 AI 辅助接口 - 提供写作辅助功能
 """
-from fastapi import APIRouter, Body, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
-from typing import Annotated
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
 
 from app.models.ai import AIWSRequest
 from app.services.ai_service import AIService, get_ai_service
 from app.services.ai_provider import AIProviderError
 from app.core.config import settings
 from app.db.session import get_session, engine
-from app.crud.preset_crud import get_preset
 from app.crud.settings_crud import get_settings
 from sqlmodel import Session
 
@@ -60,98 +58,6 @@ def ai_health():
 
 
 # ──────────────────────────────────────────────
-# REST 接口（直接调用工具函数）
-# ──────────────────────────────────────────────
-@router.post("/suggest")
-async def ai_suggest(
-    content: str = Body(..., embed=True),
-    max_length: int = Body(200, embed=True),
-    current_chapter_id: int | None = Body(None, embed=True),
-    book_id: int | None = Body(None, embed=True),
-    user_id: str = Body("default_user", embed=True),
-    project_id: str = Body("default_project", embed=True),
-    use_memory: bool = Body(True, embed=True),
-    session: Session = Depends(get_session),
-):
-    if not check_api_key(session):
-        raise HTTPException(status_code=400, detail=f"请先配置 {settings.AI_PROVIDER.upper()}_API_KEY")
-    ai_service = get_ai_service(session)
-    # 调用续写工具函数（流式生成，但 REST 返回完整结果）
-    gen = ai_service.continue_writing(
-        content=content,
-        max_length=max_length,
-        current_chapter_id=current_chapter_id,
-        book_id=book_id,
-        user_id=user_id,
-        project_id=project_id,
-        use_memory=use_memory,
-    )
-    result = "".join(list(gen))
-    return {"suggestion": result, "reason": "根据当前内容续写"}
-
-
-@router.post("/rewrite")
-async def ai_rewrite(
-    text: str | None = Body(None, embed=True),
-    content: str | None = Body(None, embed=True),
-    style: str = Body("清晰流畅", embed=True),
-    session: Session = Depends(get_session),
-):
-    if not check_api_key(session):
-        raise HTTPException(status_code=400, detail=f"请先配置 {settings.AI_PROVIDER.upper()}_API_KEY")
-    ai_service = get_ai_service(session)
-    source_text = text if text is not None else content
-    if not source_text:
-        raise HTTPException(status_code=422, detail="text or content is required")
-    result = ai_service.rewrite_text(source_text, style)
-    return {"rewritten": result, "rewritten_content": result, "reason": f"风格：{style}"}
-
-
-@router.post("/check")
-async def ai_check(
-    text: str | None = Body(None, embed=True),
-    content: str | None = Body(None, embed=True),
-    session: Session = Depends(get_session),
-):
-    if not check_api_key(session):
-        raise HTTPException(status_code=400, detail=f"请先配置 {settings.AI_PROVIDER.upper()}_API_KEY")
-    ai_service = get_ai_service(session)
-    source_text = text if text is not None else content
-    if not source_text:
-        raise HTTPException(status_code=422, detail="text or content is required")
-    result_str = ai_service.check_grammar(source_text)
-    # 解析 JSON，若失败则返回原始字符串
-    try:
-        import json
-        result = json.loads(result_str)
-    except:
-        result = {"issues": [], "suggestions": [result_str]}
-    return result
-
-
-@router.post("/plot")
-async def ai_plot(
-    description: str | None = Body(None, embed=True),
-    genre: str | None = Body(None, embed=True),
-    keywords: list[str] | None = Body(None, embed=True),
-    session: Session = Depends(get_session),
-):
-    if not check_api_key(session):
-        raise HTTPException(status_code=400, detail=f"请先配置 {settings.AI_PROVIDER.upper()}_API_KEY")
-    ai_service = get_ai_service(session)
-    plot_description = description or " ".join([genre or "", " ".join(keywords or [])]).strip()
-    if not plot_description:
-        raise HTTPException(status_code=422, detail="description, genre, or keywords is required")
-    result_str = ai_service.suggest_plot(plot_description)
-    try:
-        import json
-        result = json.loads(result_str)
-    except:
-        result = {"suggestions": [result_str]}
-    return result
-
-
-# ──────────────────────────────────────────────
 # WebSocket 统一接口（工具调用模式）
 # ──────────────────────────────────────────────
 @router.websocket("/ws")
@@ -183,6 +89,7 @@ async def ai_ws(websocket: WebSocket):
                 current_chapter_id=req.current_chapter_id,
                 book_id=req.book_id,
                 current_content=req.content or "",
+                selected_doc_ids=req.selected_doc_ids,
             )
 
             buffer = ""

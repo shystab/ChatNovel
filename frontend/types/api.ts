@@ -172,35 +172,6 @@ export interface KnowledgeBase {
   chunk_count: number;
 }
 
-export interface AIRewriteRequest {
-  content: string;
-  style?: string;
-}
-
-export interface AIRewriteResponse {
-  rewritten_content: string;
-}
-
-export interface AICheckRequest {
-  content: string;
-}
-
-export interface AICheckResponse {
-  issues: string[];
-  suggestions: string[];
-}
-
-export interface AIPlotRequest {
-  genre?: string;
-  keywords?: string[];
-  user_id?: string;
-  project_id?: string;
-}
-
-export interface AIPlotResponse {
-  suggestions: string[];
-}
-
 export type AIWSMessage =
   | { type: "token"; text: string }
   | { type: "analysis"; data: unknown }

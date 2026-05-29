@@ -67,6 +67,18 @@ def get_chapters_by_book(
     return list(session.exec(statement).all())
 
 
+def get_chapters_by_ids(session: Session, chapter_ids: list[int]) -> List[Chapter]:
+    """Return chapters for the given IDs, ordered by chapter order."""
+    if not chapter_ids:
+        return []
+    statement = (
+        select(Chapter)
+        .where(Chapter.id.in_(chapter_ids))  # type: ignore[attr-defined]
+        .order_by(Chapter.order)
+    )
+    return list(session.exec(statement).all())
+
+
 def create_chapter(session: Session, chapter: ChapterCreate) -> Chapter:
     """
     创建新章节

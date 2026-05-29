@@ -25,6 +25,7 @@ def create_conversation(session: Session, conv_in: ConversationCreate) -> Conver
         user_id=conv_in.user_id,
         title=conv_in.title,
         messages=[],
+        selected_doc_ids=[],
     )
     session.add(conv)
     session.commit()

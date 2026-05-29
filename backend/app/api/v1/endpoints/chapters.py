@@ -7,6 +7,8 @@ from sqlmodel import Session
 from typing import Annotated, List
 import io
 import docx
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
 
 from app.db.session import get_session
 from app.models.chapters import ChapterCreate, ChapterUpdate, ChapterRead
@@ -14,6 +16,7 @@ from app.crud.crud import get_chapter, get_chapters, create_chapter, update_chap
 from app.services.ai_service import get_ai_service
 from app.crud.settings_crud import get_settings
 from app.services.knowledge_service import get_knowledge_service, _chunk_text
+from app.services.workspace_service import build_txt_export, normalize_novel_text, write_chapter_file
 
 
 async def generate_chapter_summary_background(
@@ -104,13 +107,7 @@ def export_txt(
     if not chapters:
         raise HTTPException(status_code=404, detail="No chapters found")
     
-    output = io.StringIO()
-    for chapter in chapters:
-        output.write(f"{chapter.title}\n\n")
-        output.write(f"{chapter.content}\n\n")
-        output.write("-" * 20 + "\n\n")
-    
-    content = output.getvalue()
+    content = build_txt_export(chapters)
     return StreamingResponse(
         io.BytesIO(content.encode("utf-8")),
         media_type="text/plain",
@@ -131,11 +128,21 @@ def export_docx(
         raise HTTPException(status_code=404, detail="No chapters found")
     
     doc = docx.Document()
+    styles = doc.styles
+    styles["Normal"].font.name = "宋体"
+    styles["Normal"].font.size = Pt(12)
+    styles["Normal"].paragraph_format.line_spacing = 1.75
     doc.add_heading("小说全集", 0)
     
     for chapter in chapters:
-        doc.add_heading(chapter.title, level=1)
-        doc.add_paragraph(chapter.content)
+        heading = doc.add_heading(chapter.title, level=1)
+        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for paragraph_text in normalize_novel_text(chapter.content).split("\n\n"):
+            if not paragraph_text.strip():
+                continue
+            paragraph = doc.add_paragraph(paragraph_text.strip())
+            paragraph.paragraph_format.first_line_indent = Pt(24)
+            paragraph.paragraph_format.line_spacing = 1.75
         doc.add_page_break()
     
     output = io.BytesIO()
@@ -194,6 +201,7 @@ def create_chapter_endpoint(
     session: Annotated[Session, Depends(get_session)],
 ):
     created_chapter = create_chapter(session, chapter)
+    write_chapter_file(created_chapter)
 
     # 添加后台任务生成摘要（如果内容不为空）
     if chapter.content and chapter.content.strip():
@@ -235,6 +243,7 @@ def update_chapter_endpoint(
         pass
 
     updated_chapter = update_chapter(session, db_chapter, chapter)
+    write_chapter_file(updated_chapter)
 
     # 如果更新了内容，添加后台任务生成摘要
     if content_updated and new_content and new_content.strip():

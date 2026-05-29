@@ -206,6 +206,15 @@ class AIService:
                 config["max_tokens"] = db_settings.max_tokens
         return config
 
+    def _get_summary_config(self) -> dict:
+        config = {"style": "concise"}
+        if self.session:
+            from app.crud.settings_crud import get_settings
+            db_settings = get_settings(self.session)
+            if db_settings and db_settings.summary_generation_style:
+                config["style"] = db_settings.summary_generation_style
+        return config
+
     # ──────────────────────────────────────────────
     # 信息工具实现（保持不变）
     # ──────────────────────────────────────────────

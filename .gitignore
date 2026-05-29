@@ -68,6 +68,7 @@ next-env.d.ts
 backend/*.db
 backend/novel_ide.db
 backend/execise.db
+backend/workspace/
 
 # Environment variables
 .env

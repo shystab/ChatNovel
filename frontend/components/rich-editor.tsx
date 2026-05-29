@@ -44,8 +44,9 @@ interface RichEditorProps {
 }
 
 function wordCount(text: string) {
-  const chinese = (text.match(/[\u4e00-\u9fff]/g) || []).length;
-  const english = (text.match(/\b[a-zA-Z]+\b/g) || []).length;
+  const plain = text.replace(/<[^>]+>/g, "");
+  const chinese = (plain.match(/[\u4e00-\u9fff]/g) || []).length;
+  const english = (plain.match(/\b[a-zA-Z]+\b/g) || []).length;
   return chinese + english;
 }
 
@@ -92,7 +93,7 @@ export default function RichEditor({
     },
     editorProps: {
       attributes: {
-        class: "prose focus:outline-none min-h-full max-w-none",
+        class: "novel-writing-surface prose focus:outline-none min-h-full max-w-none",
         spellcheck: "false",
       },
     },
@@ -125,7 +126,7 @@ export default function RichEditor({
     }
   }, [editor, onSave]);
 
-  const paragraphs = content.split(/\n+/).filter(p => p.trim()).length;
+  const paragraphs = content.replace(/<[^>]+>/g, "\n").split(/\n+/).filter(p => p.trim()).length;
   const words = wordCount(content);
   const chars = content.replace(/<[^>]+>/g, "").length;
 
@@ -289,29 +290,38 @@ export default function RichEditor({
 
       {/* 编辑区 — 舒适的阅读宽度 + 大行距 */}
       <main className="flex-1 overflow-y-auto custom-scrollbar relative" onKeyDown={handleKeyDown}>
-        <div className="max-w-2xl mx-auto py-14 px-8 min-h-full">
+        <div className="w-full max-w-[760px] mx-auto py-12 sm:py-16 px-5 sm:px-10 min-h-full">
           <style>{`
-            .ProseMirror {
-              font-size: 1rem;
-              line-height: 2.1;
-              letter-spacing: 0.015em;
+            .novel-writing-surface {
+              font-size: 17px;
+              line-height: 2.05;
+              letter-spacing: 0;
+              text-rendering: optimizeLegibility;
+              caret-color: currentColor;
             }
-            .ProseMirror p {
-              margin-bottom: 1.2em;
+            .novel-writing-surface p {
+              margin: 0 0 0.85em;
+              text-indent: 2em;
             }
-            .ProseMirror h1 { font-size: 1.5em; font-weight: 700; margin: 1.2em 0 0.6em; line-height: 1.4; }
-            .ProseMirror h2 { font-size: 1.25em; font-weight: 700; margin: 1em 0 0.5em; line-height: 1.4; }
-            .ProseMirror blockquote {
+            .novel-writing-surface h1,
+            .novel-writing-surface h2 {
+              text-indent: 0;
+              text-align: center;
+            }
+            .novel-writing-surface h1 { font-size: 1.45em; font-weight: 700; margin: 1.6em 0 1em; line-height: 1.5; }
+            .novel-writing-surface h2 { font-size: 1.22em; font-weight: 700; margin: 1.3em 0 0.8em; line-height: 1.5; }
+            .novel-writing-surface blockquote {
               border-left: 3px solid currentColor;
               opacity: 0.7;
               padding-left: 1em;
               margin: 1em 0;
               font-style: italic;
             }
-            .ProseMirror p.is-editor-empty:first-child::before {
+            .novel-writing-surface p.is-editor-empty:first-child::before {
               color: #aaa;
               content: attr(data-placeholder);
               float: left;
+              text-indent: 0;
               height: 0;
               pointer-events: none;
             }

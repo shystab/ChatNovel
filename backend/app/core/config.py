@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # 数据库配置
     DATABASE_URL: str = Field(default="sqlite:///./novel_ide.db", description="数据库连接 URL")
     SQL_ECHO: bool = Field(default=False, description="SQLAlchemy echo（打印 SQL）")
+    NOVEL_WORKSPACE_DIR: str = Field(default="./workspace", description="小说作品文件夹根目录")
     
     # AI 配置
     AI_PROVIDER: str = Field(default="deepseek", description="AI 提供商")

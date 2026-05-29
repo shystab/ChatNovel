@@ -10,6 +10,7 @@ from app.crud import book_crud
 from app.crud.crud import get_chapters_by_book, get_chapter, create_chapter, update_chapter, delete_chapter
 from app.models.books import BookCreate, BookRead, BookUpdate
 from app.models.chapters import ChapterCreate, ChapterRead, ChapterUpdate, Chapter
+from app.services.workspace_service import write_chapter_file, write_project_manifest
 
 
 router = APIRouter(responses={404: {"description": "Not found"}})
@@ -61,6 +62,7 @@ def create_book(
     session: Annotated[Session, Depends(get_session)],
 ):
     book = book_crud.create_book(session, book_in)
+    write_project_manifest(book)
     return _build_book_read(book, session)
 
 
@@ -85,6 +87,7 @@ def update_book(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     book = book_crud.update_book(session, book, book_in)
+    write_project_manifest(book)
     return _build_book_read(book, session)
 
 
@@ -134,7 +137,9 @@ def create_chapter_in_book(
     _get_book_or_404(book_id, session)
     # book_id 从 URL 注入，覆盖 body 里的值
     chapter_in.book_id = book_id
-    return create_chapter(session, chapter_in)
+    chapter = create_chapter(session, chapter_in)
+    write_chapter_file(chapter)
+    return chapter
 
 
 @router.get(
@@ -167,7 +172,9 @@ def update_chapter_in_book(
     chapter = get_chapter(session, chapter_id, book_id=book_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
-    return update_chapter(session, chapter, chapter_in)
+    updated = update_chapter(session, chapter, chapter_in)
+    write_chapter_file(updated)
+    return updated
 
 
 @router.delete(

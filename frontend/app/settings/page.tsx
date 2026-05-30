@@ -22,9 +22,11 @@ import {
   FileText,
   Loader2,
   Archive,
+  Image as ImageIcon,
 } from "lucide-react";
 import PersonaManager from "@/components/persona-manager";
 import { useTheme } from "@/hooks/use-theme";
+import ConfirmDialog from "@/components/confirm-dialog";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -47,6 +49,12 @@ export default function SettingsPage() {
   const [backuping, setBackuping] = useState(false);
   const [workspaceImportStatus, setWorkspaceImportStatus] = useState("");
   const [workspaceImporting, setWorkspaceImporting] = useState(false);
+  const [backgroundBlur, setBackgroundBlur] = useState(0);
+  const [backgroundDim, setBackgroundDim] = useState(22);
+  const [editorPaperOpacity, setEditorPaperOpacity] = useState(92);
+  const [backgroundStatus, setBackgroundStatus] = useState("");
+  const [backgroundUploading, setBackgroundUploading] = useState(false);
+  const [backgroundVersion, setBackgroundVersion] = useState(Date.now());
 
   // 分层记忆和RAG设置
   const [currentChapterChars, setCurrentChapterChars] = useState(4000);
@@ -62,6 +70,8 @@ export default function SettingsPage() {
   const [kbLoading, setKbLoading] = useState(false);
   const [kbUploading, setKbUploading] = useState(false);
   const [kbError, setKbError] = useState<string | null>(null);
+  const [kbDeleteTarget, setKbDeleteTarget] = useState<KnowledgeBase | null>(null);
+  const [kbDeleting, setKbDeleting] = useState(false);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -86,6 +96,9 @@ export default function SettingsPage() {
       setSummaryGenerationStyle(data.summary_generation_style || "concise");
       setAutoSaveInterval(data.auto_save_interval ?? 30);
       setWorkspaceDir(data.workspace_dir || "./workspace");
+      setBackgroundBlur(data.background_blur ?? 0);
+      setBackgroundDim(data.background_dim ?? 22);
+      setEditorPaperOpacity(data.editor_paper_opacity ?? 92);
       // 分层记忆和RAG设置
       setCurrentChapterChars(data.current_chapter_chars ?? 4000);
       setNearbyChapterCount(data.nearby_chapter_count ?? 3);
@@ -120,10 +133,16 @@ export default function SettingsPage() {
     finally { setKbUploading(false); e.target.value = ""; }
   };
 
-  const handleKbDelete = async (id: number) => {
-    if (!confirm("确定要删除这个文档吗？")) return;
-    try { await api.deleteKnowledgeBase(id); await loadKnowledgeBases(); }
+  const handleKbDelete = async () => {
+    if (!kbDeleteTarget) return;
+    setKbDeleting(true);
+    try {
+      await api.deleteKnowledgeBase(kbDeleteTarget.id);
+      await loadKnowledgeBases();
+      setKbDeleteTarget(null);
+    }
     catch { setKbError("删除失败"); }
+    finally { setKbDeleting(false); }
   };
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -138,6 +157,9 @@ export default function SettingsPage() {
         summary_generation_style: summaryGenerationStyle,
         auto_save_interval: autoSaveInterval,
         workspace_dir: workspaceDir.trim() || "./workspace",
+        background_blur: backgroundBlur,
+        background_dim: backgroundDim,
+        editor_paper_opacity: editorPaperOpacity,
         // 分层记忆和RAG设置
         current_chapter_chars: currentChapterChars,
         nearby_chapter_count: nearbyChapterCount,
@@ -161,6 +183,39 @@ export default function SettingsPage() {
       return false;
     }
     finally { setSaving(false); }
+  };
+
+  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBackgroundUploading(true);
+    setBackgroundStatus("正在上传背景图...");
+    try {
+      const updated = await api.uploadBackgroundImage(file);
+      setSettings(updated);
+      setBackgroundVersion(Date.now());
+      setBackgroundStatus("背景图已更新");
+    } catch {
+      setBackgroundStatus("背景图上传失败");
+    } finally {
+      setBackgroundUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleBackgroundClear = async () => {
+    setBackgroundUploading(true);
+    setBackgroundStatus("正在清除背景图...");
+    try {
+      const updated = await api.clearBackgroundImage();
+      setSettings(updated);
+      setBackgroundVersion(Date.now());
+      setBackgroundStatus("背景图已清除");
+    } catch {
+      setBackgroundStatus("清除失败");
+    } finally {
+      setBackgroundUploading(false);
+    }
   };
 
   const handleWorkspaceSync = async () => {
@@ -240,60 +295,67 @@ export default function SettingsPage() {
   // ── 主题相关样式 ─────────────────────────────────────────────────────────────
   const isDark = theme === 'dark';
   const isSepia = theme === 'sepia';
-  const pageBg = isDark ? 'bg-slate-950' : isSepia ? 'bg-amber-50' : 'bg-slate-50';
-  const headerBg = isDark ? 'bg-slate-900/90 border-slate-800' : isSepia ? 'bg-amber-100/80 border-amber-200' : 'bg-white/90 border-slate-200';
-  const cardBg = isDark ? 'bg-slate-900 border-slate-800' : isSepia ? 'bg-amber-100/60 border-amber-200' : 'bg-white border-slate-100';
-  const headingTxt = isDark ? 'text-slate-100' : isSepia ? 'text-amber-900' : 'text-slate-800';
-  const bodyTxt = isDark ? 'text-slate-300' : isSepia ? 'text-amber-700' : 'text-slate-600';
-  const mutedTxt = isDark ? 'text-slate-500' : isSepia ? 'text-amber-500' : 'text-slate-400';
-  const borderCls = isDark ? 'border-slate-800' : isSepia ? 'border-amber-200' : 'border-slate-100';
-  const accentBar = isDark ? 'bg-slate-400' : isSepia ? 'bg-amber-600' : 'bg-slate-900';
-  const navActive = isDark ? 'bg-slate-800 text-slate-100' : isSepia ? 'bg-amber-200 text-amber-900' : 'bg-slate-100 text-slate-900';
-  const navInactive = isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200' : isSepia ? 'text-amber-600 hover:bg-amber-100 hover:text-amber-900' : 'text-slate-500 hover:bg-slate-100';
-  const inputCls = isDark ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500' : isSepia ? 'bg-amber-50 border-amber-300 text-amber-900 placeholder:text-amber-400 focus:border-amber-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-300 focus:border-slate-400';
-  const primaryBtn = isDark ? 'bg-slate-700 hover:bg-slate-600 text-white shadow-slate-900' : isSepia ? 'bg-amber-800 hover:bg-amber-700 text-white shadow-amber-300' : 'bg-slate-900 hover:bg-slate-800 text-white shadow-slate-200';
-  const hoverRow = isDark ? 'hover:bg-slate-800' : isSepia ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
+  const pageBg = isDark ? 'bg-slate-950' : isSepia ? 'bg-[#f7f2e8]' : 'bg-slate-100';
+  const headerBg = isDark ? 'bg-slate-950/90 border-slate-800' : isSepia ? 'bg-[#f7f2e8]/90 border-amber-200' : 'bg-slate-100/90 border-slate-200';
+  const cardBg = isDark ? 'bg-slate-900/70 border-slate-800' : isSepia ? 'bg-[#fbf7ed] border-amber-200' : 'bg-white border-slate-200';
+  const headingTxt = isDark ? 'text-slate-100' : isSepia ? 'text-amber-950' : 'text-slate-900';
+  const bodyTxt = isDark ? 'text-slate-300' : isSepia ? 'text-amber-800' : 'text-slate-700';
+  const mutedTxt = isDark ? 'text-slate-500' : isSepia ? 'text-amber-600' : 'text-slate-500';
+  const hoverTxt = isDark ? 'hover:text-slate-100' : isSepia ? 'hover:text-amber-950' : 'hover:text-slate-900';
+  const groupHoverTxt = isDark ? 'group-hover:text-slate-100' : isSepia ? 'group-hover:text-amber-950' : 'group-hover:text-slate-900';
+  const borderCls = isDark ? 'border-slate-800' : isSepia ? 'border-amber-200' : 'border-slate-200';
+  const accentBar = isDark ? 'bg-slate-500' : isSepia ? 'bg-amber-700' : 'bg-slate-900';
+  const navActive = isDark ? 'bg-slate-800 text-slate-100' : isSepia ? 'bg-amber-100 text-amber-950' : 'bg-white text-slate-900 border-slate-200';
+  const navInactive = isDark ? 'text-slate-400 hover:bg-slate-900 hover:text-slate-200' : isSepia ? 'text-amber-700 hover:bg-amber-100 hover:text-amber-950' : 'text-slate-600 hover:bg-white hover:text-slate-900';
+  const inputCls = isDark ? 'bg-slate-950/40 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500' : isSepia ? 'bg-white/60 border-amber-200 text-amber-950 placeholder:text-amber-400 focus:border-amber-500' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-slate-400';
+  const primaryBtn = isDark ? 'bg-slate-200 hover:bg-white text-slate-950' : isSepia ? 'bg-amber-900 hover:bg-amber-800 text-white' : 'bg-slate-900 hover:bg-slate-800 text-white';
+  const secondaryBtn = isDark ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 border-slate-700' : isSepia ? 'bg-[#f7f2e8] text-amber-800 hover:bg-amber-100 border-amber-200' : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200';
+  const hoverRow = isDark ? 'hover:bg-slate-900' : isSepia ? 'hover:bg-amber-100/60' : 'hover:bg-slate-50';
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+  const backgroundPreviewUrl = settings?.background_image_path
+    ? `${apiBase}/settings/background?v=${backgroundVersion}`
+    : "";
 
   return (
     <div className={`min-h-screen ${pageBg} flex flex-col ${bodyTxt}`}>
       {/* Toast */}
       {toast && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[2000] px-5 py-3 rounded-2xl shadow-xl text-sm font-semibold flex items-center space-x-2 transition-all ${toast.ok ? "bg-slate-900 text-white" : "bg-red-500 text-white"}`}>
+        <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 z-[2000] px-4 py-2 rounded-md text-sm font-semibold flex items-center space-x-2 border transition-all ${toast.ok ? "bg-slate-950 text-white border-slate-800" : "bg-red-600 text-white border-red-700"}`}>
           <span>{toast.ok ? "✓" : "✕"}</span>
           <span>{toast.msg}</span>
         </div>
       )}
 
       {/* 顶部导航 */}
-      <header className={`sticky top-0 z-[100] backdrop-blur-md border-b ${headerBg} px-8 py-4 flex justify-between items-center`}>
+      <header className={`sticky top-0 z-[100] backdrop-blur-md border-b ${headerBg} px-6 py-3 flex justify-between items-center`}>
         <div className="flex items-center space-x-6">
-          <Link href="/" className={`group flex items-center space-x-2 ${mutedTxt} hover:${headingTxt} transition-all`}>
-            <div className={`p-2 rounded-full ${hoverRow} transition-colors`}>
-              <ChevronLeft size={20} />
+          <Link href="/" className={`group flex items-center space-x-2 ${mutedTxt} ${hoverTxt} transition-all`}>
+            <div className={`p-1.5 rounded-md ${hoverRow} transition-colors`}>
+              <ChevronLeft size={18} />
             </div>
             <span className="text-sm font-medium">返回编辑器</span>
           </Link>
           <div className={`h-4 w-px ${borderCls}`} />
           <div className="flex items-center space-x-2">
             <SettingsIcon size={18} className={mutedTxt} />
-            <h1 className={`font-bold text-lg tracking-tight ${headingTxt}`}>系统配置中心</h1>
+            <h1 className={`font-bold text-base tracking-tight ${headingTxt}`}>设置</h1>
           </div>
         </div>
         <button
           onClick={() => handleSave()}
           disabled={saving || activeTab !== 'model'}
-          className={`flex items-center space-x-2 px-6 py-2.5 rounded-full ${primaryBtn} disabled:opacity-40 transition-all shadow-lg font-semibold text-sm`}
+          className={`flex items-center space-x-2 px-4 py-2 rounded-md ${primaryBtn} disabled:opacity-40 transition-all font-semibold text-sm`}
         >
           {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
           <span>{saving ? "正在同步..." : "保存更改"}</span>
         </button>
       </header>
 
-      <main className={`flex-1 max-w-5xl mx-auto w-full py-10 px-8 grid grid-cols-12 gap-10`}>
+      <main className={`flex-1 max-w-6xl mx-auto w-full py-8 px-6 grid grid-cols-12 gap-8`}>
         {/* 左侧导航 */}
         <aside className="col-span-3 space-y-1">
           <nav className="sticky top-28">
-            <p className={`text-[10px] font-bold ${mutedTxt} uppercase tracking-widest px-4 mb-3`}>配置分类</p>
+            <p className={`text-[10px] font-bold ${mutedTxt} uppercase tracking-widest px-3 mb-2`}>设置</p>
             {[
               { key: "model", icon: <Cpu size={16} />, label: "AI 模型服务" },
               { key: "persona", icon: <Sparkles size={16} />, label: "人格预设" },
@@ -303,7 +365,7 @@ export default function SettingsPage() {
               <button
                 key={key}
                 onClick={() => setActiveTab(key as typeof activeTab)}
-                className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${activeTab === key ? navActive : navInactive}`}
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md border border-transparent font-semibold text-sm transition-all ${activeTab === key ? navActive : navInactive}`}
               >
                 {icon}
                 <span>{label}</span>
@@ -313,7 +375,7 @@ export default function SettingsPage() {
         </aside>
 
         {/* 右侧主配置区 */}
-        <div className="col-span-9 space-y-8 pb-20">
+        <div className="col-span-9 space-y-6 pb-16">
           {loading && activeTab === 'model' ? (
             <div className="flex flex-col items-center justify-center py-20 space-y-4">
               <div className={`w-10 h-10 border-4 ${isDark ? 'border-slate-700 border-t-slate-400' : 'border-slate-200 border-t-slate-900'} rounded-full animate-spin`} />
@@ -330,13 +392,13 @@ export default function SettingsPage() {
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                       <h2 className={`text-lg font-bold ${headingTxt}`}>模型供应商</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-6`}>
+                    <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
                       <div className="space-y-3">
                         <label className={`text-sm font-bold ${headingTxt}`}>选择 AI 服务商</label>
                         <select
                           value={provider}
                           onChange={(e) => setProvider(e.target.value)}
-                          className={`w-full border-2 rounded-2xl px-6 py-4 text-sm focus:ring-4 outline-none transition-all ${inputCls}`}
+                          className={`w-full border rounded-md px-3 py-2 text-sm outline-none transition-all ${inputCls}`}
                         >
                           <option value="deepseek">DeepSeek - 极致性价比，中文创作首选</option>
                           <option value="openai">OpenAI - 行业标杆，逻辑性极强</option>
@@ -351,10 +413,10 @@ export default function SettingsPage() {
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                       <h2 className={`text-lg font-bold ${headingTxt}`}>API 身份验证</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-6`}>
+                    <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
                       <div className="flex items-start space-x-4">
-                        <div className={`p-3 ${isDark ? 'bg-amber-900/30' : 'bg-amber-50'} rounded-2xl text-amber-500`}>
-                          <Key size={24} />
+                        <div className={`p-2 ${isDark ? 'bg-slate-800' : isSepia ? 'bg-amber-100' : 'bg-slate-100'} rounded-md ${mutedTxt}`}>
+                          <Key size={18} />
                         </div>
                         <div className="flex-1 space-y-4">
                           <div className="space-y-1">
@@ -369,10 +431,10 @@ export default function SettingsPage() {
                               value={apiKeyInput}
                               onChange={(e) => setApiKeyInput(e.target.value)}
                               placeholder={provider === "deepseek" ? (settings?.has_deepseek_key ? "•••••••••••••••• (已加密存储)" : "sk-...") : (settings?.has_openai_key ? "•••••••••••••••• (已加密存储)" : "sk-...")}
-                              className={`w-full border-2 rounded-2xl px-6 py-4 text-sm focus:ring-4 outline-none transition-all font-mono ${inputCls}`}
+                              className={`w-full border rounded-md px-3 py-2 text-sm outline-none transition-all font-mono ${inputCls}`}
                             />
                             {(provider === "deepseek" ? settings?.has_deepseek_key : settings?.has_openai_key) && !apiKeyInput && (
-                              <div className="absolute right-6 top-1/2 -translate-y-1/2 flex items-center space-x-2 text-emerald-500 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-2 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">
                                 <CheckCircle2 size={14} />
                                 <span className="text-[10px] font-bold uppercase tracking-wider">密钥已就绪</span>
                               </div>
@@ -390,24 +452,24 @@ export default function SettingsPage() {
                       <h2 className={`text-lg font-bold ${headingTxt}`}>生成参数控制</h2>
                     </div>
                     <div className="grid grid-cols-2 gap-6">
-                      <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-5`}>
+                      <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
                         <div className="flex justify-between items-center">
                           <div className={`flex items-center space-x-3 ${headingTxt} font-bold text-sm`}>
                             <Thermometer size={18} className="text-orange-500" />
                             <span>采样温度</span>
                           </div>
-                          <span className={`${headingTxt} font-black text-sm px-2 py-1 ${isDark ? 'bg-slate-800' : 'bg-slate-100'} rounded-lg`}>{temperature}</span>
+                          <span className={`${headingTxt} font-semibold text-sm px-2 py-1 ${isDark ? 'bg-slate-800' : 'bg-slate-100'} rounded-md`}>{temperature}</span>
                         </div>
                         <input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(e) => setTemperature(parseFloat(e.target.value))} className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${isDark ? 'bg-slate-700 accent-slate-400' : 'bg-slate-100 accent-slate-900'}`} />
                         <div className={`flex justify-between text-[10px] ${mutedTxt} font-bold uppercase tracking-widest`}><span>严谨精确</span><span>更具创意</span></div>
                       </div>
-                      <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-5`}>
+                      <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
                         <div className="flex justify-between items-center">
                           <div className={`flex items-center space-x-3 ${headingTxt} font-bold text-sm`}>
                             <Hash size={18} className="text-emerald-500" />
                             <span>最大生成长度</span>
                           </div>
-                          <span className={`${headingTxt} font-black text-sm px-2 py-1 ${isDark ? 'bg-slate-800' : 'bg-slate-100'} rounded-lg`}>{maxTokens}</span>
+                          <span className={`${headingTxt} font-semibold text-sm px-2 py-1 ${isDark ? 'bg-slate-800' : 'bg-slate-100'} rounded-md`}>{maxTokens}</span>
                         </div>
                         <input type="range" min="100" max="4000" step="100" value={maxTokens} onChange={(e) => setMaxTokens(parseInt(e.target.value))} className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${isDark ? 'bg-slate-700 accent-slate-400' : 'bg-slate-100 accent-slate-900'}`} />
                         <div className={`flex justify-between text-[10px] ${mutedTxt} font-bold uppercase tracking-widest`}><span>短建议</span><span>长篇大论</span></div>
@@ -421,7 +483,7 @@ export default function SettingsPage() {
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                       <h2 className={`text-lg font-bold ${headingTxt}`}>章节总结设置</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-6`}>
+                    <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
                       <div className="flex items-center justify-between">
                         <div>
                           <div className={`text-sm font-bold ${headingTxt}`}>自动生成摘要</div>
@@ -441,7 +503,7 @@ export default function SettingsPage() {
                           <select
                             value={summaryGenerationStyle}
                             onChange={(e) => setSummaryGenerationStyle(e.target.value)}
-                            className={`w-full border-2 rounded-2xl px-6 py-4 text-sm focus:ring-4 outline-none transition-all ${inputCls}`}
+                            className={`w-full border rounded-md px-3 py-2 text-sm outline-none transition-all ${inputCls}`}
                           >
                             <option value="concise">简洁 - 一两句话概括核心情节</option>
                             <option value="detailed">详细 - 完整记录人物、事件与转折</option>
@@ -458,7 +520,7 @@ export default function SettingsPage() {
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                       <h2 className={`text-lg font-bold ${headingTxt}`}>保存与文件</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-6`}>
+                    <div className={`p-5 rounded-lg border ${cardBg} space-y-5`}>
                       <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-6">
                         <div>
                           <label className={`text-sm font-bold ${headingTxt}`}>自动保存</label>
@@ -470,7 +532,7 @@ export default function SettingsPage() {
                               max={300}
                               value={autoSaveInterval}
                               onChange={(e) => setAutoSaveInterval(parseInt(e.target.value) || 0)}
-                              className={`w-24 border-2 rounded-2xl px-4 py-3 text-sm focus:ring-4 outline-none transition-all ${inputCls}`}
+                              className={`w-24 border rounded-md px-3 py-2 text-sm outline-none transition-all ${inputCls}`}
                             />
                             <span className={`text-xs ${mutedTxt}`}>秒</span>
                           </div>
@@ -489,7 +551,7 @@ export default function SettingsPage() {
                             value={workspaceDir}
                             onChange={(e) => setWorkspaceDir(e.target.value)}
                             placeholder="D:\\Novels\\VibeWriter"
-                            className={`w-full border-2 rounded-2xl px-5 py-3 mt-4 text-sm focus:ring-4 outline-none transition-all font-mono ${inputCls}`}
+                            className={`w-full border rounded-md px-3 py-2 mt-3 text-sm outline-none transition-all font-mono ${inputCls}`}
                           />
                         </div>
                       </div>
@@ -499,7 +561,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={handleWorkspaceSync}
                           disabled={workspaceSyncing}
-                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
                         >
                           <FileText size={15} />
                           {workspaceSyncing ? "同步中..." : "同步整个作品库"}
@@ -508,7 +570,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={handleWorkspaceBackup}
                           disabled={backuping}
-                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
                         >
                           <Archive size={15} />
                           {backuping ? "备份中..." : "下载备份 ZIP"}
@@ -517,7 +579,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={handleWorkspaceScan}
                           disabled={workspaceImporting}
-                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
                         >
                           <Database size={15} />
                           {workspaceImporting ? "处理中..." : "扫描作品文件夹"}
@@ -526,7 +588,7 @@ export default function SettingsPage() {
                           type="button"
                           onClick={handleWorkspaceImport}
                           disabled={workspaceImporting}
-                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-md text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
                         >
                           <Upload size={15} />
                           {workspaceImporting ? "处理中..." : "从文件夹导入"}
@@ -549,7 +611,7 @@ export default function SettingsPage() {
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                       <h2 className={`text-lg font-bold ${headingTxt}`}>分层记忆强度</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-6`}>
+                    <div className={`p-5 rounded-lg border ${cardBg} space-y-5`}>
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
                           <label className={`text-sm font-bold ${headingTxt}`}>当前章节注入长度</label>
@@ -617,7 +679,7 @@ export default function SettingsPage() {
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                       <h2 className={`text-lg font-bold ${headingTxt}`}>RAG 行为</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-6`}>
+                    <div className={`p-5 rounded-lg border ${cardBg} space-y-5`}>
                       <div className="flex items-center justify-between">
                         <div>
                           <p className={`text-sm font-bold ${headingTxt}`}>续写时默认使用外部知识库</p>
@@ -664,15 +726,14 @@ export default function SettingsPage() {
                   </section>
 
                   {/* 隐私声明 */}
-                  <div className={`${isDark ? 'bg-slate-800' : 'bg-slate-900'} rounded-3xl p-8 text-white relative overflow-hidden shadow-2xl`}>
-                    <div className="relative z-10 flex items-center space-x-6">
-                      <div className="p-4 bg-white/10 backdrop-blur-xl rounded-2xl"><AlertCircle size={32} /></div>
+                  <div className={`${isDark ? 'bg-slate-900 border-slate-800 text-slate-300' : isSepia ? 'bg-[#fbf7ed] border-amber-200 text-amber-800' : 'bg-white border-slate-200 text-slate-700'} border rounded-lg p-5`}>
+                    <div className="flex items-start space-x-3">
+                      <div className={`p-2 ${isDark ? 'bg-slate-800' : 'bg-slate-100'} rounded-md`}><AlertCircle size={18} /></div>
                       <div>
-                        <h3 className="font-bold text-lg mb-1">隐私承诺</h3>
-                        <p className="text-slate-200 text-sm leading-relaxed">VibeWriter 是&quot;本地优先&quot;的 IDE。除向您选择的 AI 服务商发送必要的提示词外，所有写作内容均仅存储在本地。</p>
+                        <h3 className={`font-bold text-sm mb-1 ${headingTxt}`}>本地优先</h3>
+                        <p className={`text-xs leading-relaxed ${mutedTxt}`}>除向您选择的 AI 服务商发送必要提示词外，写作内容默认保存在本机。</p>
                       </div>
                     </div>
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl" />
                   </div>
                 </>
               )}
@@ -689,17 +750,17 @@ export default function SettingsPage() {
                   </div>
 
                   {kbError && (
-                    <div className={`p-4 ${isDark ? 'bg-red-900/30 border-red-800 text-red-300' : 'bg-red-50 border-red-200 text-red-700'} border rounded-2xl flex items-center space-x-3 text-sm`}>
+                    <div className={`p-3 ${isDark ? 'bg-red-950/40 border-red-900 text-red-300' : 'bg-red-50 border-red-200 text-red-700'} border rounded-md flex items-center space-x-3 text-sm`}>
                       <AlertCircle size={16} />
                       <span>{kbError}</span>
                     </div>
                   )}
 
                   {/* 上传区 */}
-                  <div className={`p-8 rounded-3xl border ${cardBg} shadow-sm`}>
+                  <div className={`p-5 rounded-lg border ${cardBg}`}>
                     <label className="relative group cursor-pointer block">
                       <input type="file" className="hidden" onChange={handleKbUpload} disabled={kbUploading} accept=".txt,.pdf,.docx" />
-                      <div className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center transition-all ${
+                      <div className={`border border-dashed rounded-lg p-8 flex flex-col items-center justify-center transition-all ${
                         kbUploading
                           ? `${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`
                           : `${isDark ? 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/50' : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50'}`
@@ -707,7 +768,7 @@ export default function SettingsPage() {
                         {kbUploading ? (
                           <Loader2 size={32} className={`${isDark ? 'text-slate-400' : 'text-slate-600'} animate-spin mb-4`} />
                         ) : (
-                          <Upload size={32} className={`${mutedTxt} group-hover:${headingTxt} transition-colors mb-4`} />
+                          <Upload size={32} className={`${mutedTxt} ${groupHoverTxt} transition-colors mb-4`} />
                         )}
                         <span className={`text-sm font-bold ${headingTxt}`}>
                           {kbUploading ? "正在解析并向量化..." : "点击或拖拽上传写作语料"}
@@ -718,20 +779,20 @@ export default function SettingsPage() {
                   </div>
 
                   {/* 已上传列表 */}
-                  <div className={`p-6 rounded-3xl border ${cardBg} shadow-sm space-y-4`}>
+                  <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
                     <h3 className={`text-xs font-bold ${mutedTxt} uppercase tracking-widest`}>已加载的知识片段</h3>
                     {kbLoading ? (
                       <div className="py-10 flex justify-center"><Loader2 className={`animate-spin ${mutedTxt}`} size={28} /></div>
                     ) : kbItems.length === 0 ? (
-                      <div className={`py-10 text-center ${mutedTxt} italic text-sm border-2 border-dotted ${isDark ? 'border-slate-800' : 'border-slate-100'} rounded-2xl`}>
+                      <div className={`py-8 text-center ${mutedTxt} italic text-sm border border-dotted ${borderCls} rounded-lg`}>
                         暂无知识语料，上传文件以开启 RAG 增强
                       </div>
                     ) : (
                       <div className="space-y-2">
                         {kbItems.map((item) => (
-                          <div key={item.id} className={`group p-4 rounded-2xl border ${borderCls} flex justify-between items-center ${hoverRow} transition-all`}>
+                          <div key={item.id} className={`group p-3 rounded-md border ${borderCls} flex justify-between items-center ${hoverRow} transition-all`}>
                             <div className="flex items-center space-x-4">
-                              <div className={`p-3 ${isDark ? 'bg-slate-800' : 'bg-slate-50'} rounded-xl ${mutedTxt}`}>
+                              <div className={`p-2 ${isDark ? 'bg-slate-800' : 'bg-slate-50'} rounded-md ${mutedTxt}`}>
                                 <FileText size={18} />
                               </div>
                               <div>
@@ -742,8 +803,8 @@ export default function SettingsPage() {
                               </div>
                             </div>
                             <button
-                              onClick={() => handleKbDelete(item.id)}
-                              className={`p-2 ${mutedTxt} hover:text-red-500 rounded-xl transition-all opacity-0 group-hover:opacity-100`}
+                              onClick={() => setKbDeleteTarget(item)}
+                              className={`p-1.5 ${mutedTxt} hover:text-red-500 rounded-md transition-all opacity-0 group-hover:opacity-100`}
                               title="删除文档"
                             >
                               <Trash2 size={16} />
@@ -754,7 +815,7 @@ export default function SettingsPage() {
                     )}
                   </div>
 
-                  <div className={`${isDark ? 'bg-slate-800/60 border-slate-700' : 'bg-blue-50 border-blue-100'} border rounded-2xl p-5`}>
+                  <div className={`${isDark ? 'bg-slate-900 border-slate-800' : isSepia ? 'bg-[#fbf7ed] border-amber-200' : 'bg-white border-slate-200'} border rounded-lg p-4`}>
                     <div className="flex items-start space-x-3">
                       <AlertCircle size={18} className={isDark ? 'text-slate-400' : 'text-blue-500'} />
                       <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-blue-700'} leading-relaxed`}>
@@ -772,28 +833,101 @@ export default function SettingsPage() {
                     <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                     <h2 className={`text-lg font-bold ${headingTxt}`}>编辑器主题</h2>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     {[
-                      { key: "light", label: "浅色模式", desc: "经典白色背景，清晰简洁", preview: "from-white to-slate-50", previewBorder: "border-slate-200", ring: "border-slate-900 bg-white shadow-xl ring-4 ring-slate-100", normal: "border-slate-200 bg-white hover:border-slate-300" },
-                      { key: "dark", label: "深色模式", desc: "护眼深色，适合夜间写作", preview: "from-slate-800 to-slate-900", previewBorder: "border-slate-700", ring: "border-slate-500 bg-slate-800 shadow-xl ring-4 ring-slate-700", normal: "border-slate-200 bg-white hover:border-slate-300" },
-                      { key: "sepia", label: "护眼模式", desc: "米黄色背景，长时间阅读舒适", preview: "from-amber-100 to-amber-200", previewBorder: "border-amber-300", ring: "border-amber-800 bg-amber-100 shadow-xl ring-4 ring-amber-200", normal: "border-slate-200 bg-white hover:border-slate-300" },
+                      { key: "light", label: "浅色模式", desc: "经典白色背景", preview: "from-white to-slate-100", previewBorder: "border-slate-200", ring: "border-slate-900 bg-white", normal: "border-slate-200 bg-white hover:border-slate-300" },
+                      { key: "dark", label: "深色模式", desc: "夜间写作", preview: "from-slate-800 to-slate-950", previewBorder: "border-slate-700", ring: "border-slate-500 bg-slate-900", normal: "border-slate-700 bg-slate-900 hover:border-slate-500" },
+                      { key: "sepia", label: "护眼模式", desc: "暖色纸张", preview: "from-amber-50 to-amber-100", previewBorder: "border-amber-200", ring: "border-amber-800 bg-[#fbf7ed]", normal: "border-amber-200 bg-[#fbf7ed] hover:border-amber-300" },
                     ].map(t => (
                       <button
                         key={t.key}
                         type="button"
                         onClick={() => setTheme(t.key as "light" | "dark" | "sepia")}
-                        className={`relative p-6 rounded-2xl border-2 text-left transition-all ${theme === t.key ? t.ring : t.normal}`}
+                        className={`relative p-4 rounded-lg border text-left transition-all ${theme === t.key ? t.ring : t.normal}`}
                       >
                         <div className={`aspect-video bg-gradient-to-br ${t.preview} border ${t.previewBorder} rounded-lg mb-4`} />
-                        <div className="font-bold text-slate-900">{t.label}</div>
-                        <div className="text-xs text-slate-400 mt-1">{t.desc}</div>
+                        <div className={`font-bold text-sm ${headingTxt}`}>{t.label}</div>
+                        <div className={`text-xs ${mutedTxt} mt-1`}>{t.desc}</div>
                         {theme === t.key && (
-                          <div className="absolute top-3 right-3 bg-slate-900 text-white p-1 rounded-full"><CheckCircle2 size={14} /></div>
+                          <div className="absolute top-3 right-3 bg-slate-900 text-white p-1 rounded-md"><CheckCircle2 size={14} /></div>
                         )}
                       </button>
                     ))}
                   </div>
-                  <div className={`${isDark ? 'bg-slate-800 border-slate-700' : 'bg-blue-50 border-blue-100'} border rounded-2xl p-5`}>
+
+                  <div className={`p-5 rounded-lg border ${cardBg} space-y-5`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className={`text-sm font-bold ${headingTxt}`}>编辑器背景</h3>
+                        <p className={`text-xs ${mutedTxt} mt-1`}>图片会复制到作品文件夹的 .assets/backgrounds 中。</p>
+                      </div>
+                      <ImageIcon size={18} className={mutedTxt} />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-6">
+                      <div className={`aspect-[4/3] rounded-lg overflow-hidden border ${borderCls} ${isDark ? 'bg-slate-800' : 'bg-slate-100'} flex items-center justify-center`}>
+                        {backgroundPreviewUrl ? (
+                          <div
+                            className="w-full h-full bg-cover bg-center"
+                            style={{ backgroundImage: `url(${backgroundPreviewUrl})` }}
+                          />
+                        ) : (
+                          <ImageIcon size={28} className={mutedTxt} />
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-xs font-bold cursor-pointer transition-all ${primaryBtn}`}>
+                            <Upload size={14} />
+                            {backgroundUploading ? "处理中..." : "上传背景图"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={backgroundUploading}
+                              onChange={handleBackgroundUpload}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleBackgroundClear}
+                            disabled={backgroundUploading || !settings?.background_image_path}
+                            className={`px-4 py-2 rounded-md text-xs font-bold transition-all disabled:opacity-40 border ${secondaryBtn}`}
+                          >
+                            清除背景
+                          </button>
+                          {backgroundStatus && <span className={`text-[10px] ${mutedTxt}`}>{backgroundStatus}</span>}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <div className="flex justify-between text-xs mb-2">
+                              <span className={`font-bold ${headingTxt}`}>模糊</span>
+                              <span className={mutedTxt}>{backgroundBlur}px</span>
+                            </div>
+                            <input type="range" min={0} max={24} value={backgroundBlur} onChange={e => setBackgroundBlur(parseInt(e.target.value))} className="w-full accent-slate-900" />
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-xs mb-2">
+                              <span className={`font-bold ${headingTxt}`}>暗度</span>
+                              <span className={mutedTxt}>{backgroundDim}%</span>
+                            </div>
+                            <input type="range" min={0} max={85} value={backgroundDim} onChange={e => setBackgroundDim(parseInt(e.target.value))} className="w-full accent-slate-900" />
+                          </div>
+                          <div>
+                            <div className="flex justify-between text-xs mb-2">
+                              <span className={`font-bold ${headingTxt}`}>纸张</span>
+                              <span className={mutedTxt}>{editorPaperOpacity}%</span>
+                            </div>
+                            <input type="range" min={55} max={100} value={editorPaperOpacity} onChange={e => setEditorPaperOpacity(parseInt(e.target.value))} className="w-full accent-slate-900" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`${isDark ? 'bg-slate-900 border-slate-800' : isSepia ? 'bg-[#fbf7ed] border-amber-200' : 'bg-white border-slate-200'} border rounded-lg p-4`}>
                     <div className="flex items-start space-x-3">
                       <AlertCircle size={18} className={isDark ? 'text-slate-400' : 'text-blue-500'} />
                       <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-blue-700'} leading-relaxed`}>
@@ -807,6 +941,17 @@ export default function SettingsPage() {
           )}
         </div>
       </main>
+      <ConfirmDialog
+        open={Boolean(kbDeleteTarget)}
+        title="删除知识库文档"
+        description={`确定要删除“${kbDeleteTarget?.title || "这个文档"}”吗？相关知识切片也会一起移除。`}
+        confirmLabel="删除"
+        tone="danger"
+        theme={theme}
+        busy={kbDeleting}
+        onConfirm={handleKbDelete}
+        onCancel={() => setKbDeleteTarget(null)}
+      />
     </div>
   );
 }

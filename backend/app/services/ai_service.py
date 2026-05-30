@@ -2,6 +2,7 @@
 AI 服务层 - 通用 AI 服务（工具调用版）
 """
 import json
+import logging
 import re
 from typing import List
 
@@ -34,6 +35,8 @@ DEFAULT_WRITER_PERSONA = """你是一个专业的小说写作助手。
 - 禁止过度热情的语气"""
 
 DEFAULT_SUMMARY_SYSTEM = "你是专业小说摘要生成助手。请为以下章节内容生成简洁准确的摘要，概括核心情节和关键信息。"
+
+logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
 # 工具定义（Function Calling）
@@ -121,13 +124,13 @@ class AIService:
         # 尝试从全局预设系统获取（preset_crud）
         global_preset = get_enabled_preset_new(self.session)
         if global_preset and global_preset.system_prompt.strip():
-            print(f"[DEBUG] Using global preset: {global_preset.name}")
+            logger.debug("Using global preset id=%s", global_preset.id)
             return global_preset.system_prompt.strip()
 
         # 如果全局预设没有启用的，尝试从用户特定预设系统获取（memory_crud）
         user_preset = get_enabled_preset(self.session, user_id, project_id)
         if user_preset and user_preset.system_prompt.strip():
-            print(f"[DEBUG] Using user preset: {user_preset.name}")
+            logger.debug("Using user preset id=%s", user_preset.id)
             return user_preset.system_prompt.strip()
 
         return DEFAULT_WRITER_PERSONA
@@ -159,23 +162,138 @@ class AIService:
                 config["style"] = db_settings.summary_generation_style
         return config
 
+    def _get_chat_context_config(self) -> dict:
+        config = {
+            "current_chapter_chars": 1800,
+            "chat_use_chapter_rag": True,
+            "suggest_use_external_rag": False,
+            "external_rag_weight": 30,
+        }
+        if self.session:
+            from app.crud.settings_crud import get_settings
+            db_settings = get_settings(self.session)
+            if db_settings:
+                config["current_chapter_chars"] = max(500, min(db_settings.current_chapter_chars or 1800, 6000))
+                config["chat_use_chapter_rag"] = bool(db_settings.chat_use_chapter_rag)
+                config["suggest_use_external_rag"] = bool(db_settings.suggest_use_external_rag)
+                config["external_rag_weight"] = db_settings.external_rag_weight or 30
+        return config
+
+    def _latest_user_query(self, messages: List[dict], current_content: str = "") -> str:
+        for msg in reversed(messages):
+            if msg.get("role") == "user" and str(msg.get("content", "")).strip():
+                return str(msg["content"]).strip()
+        return current_content[-1000:].strip()
+
+    @staticmethod
+    def _clip_text(text: str, limit: int) -> str:
+        text = (text or "").strip()
+        if len(text) <= limit:
+            return text
+        return text[:limit] + "...（已截断）"
+
+    @staticmethod
+    def _plain_text(value: str) -> str:
+        value = value or ""
+        value = re.sub(r"<br\s*/?>", "\n", value, flags=re.IGNORECASE)
+        value = re.sub(r"</p\s*>", "\n\n", value, flags=re.IGNORECASE)
+        value = re.sub(r"<[^>]+>", "", value)
+        replacements = {
+            "&nbsp;": " ",
+            "&lt;": "<",
+            "&gt;": ">",
+            "&amp;": "&",
+            "&quot;": '"',
+        }
+        for old, new in replacements.items():
+            value = value.replace(old, new)
+        return re.sub(r"\n{3,}", "\n\n", value).strip()
+
+    def _build_auto_context(
+        self,
+        *,
+        messages: List[dict],
+        current_content: str,
+        user_id: str,
+        project_id: str,
+        book_id: int | None,
+        selected_doc_ids: list[int] | None,
+    ) -> str:
+        """构建轻量自动上下文，让已选语料和全书检索更稳定地生效。"""
+        if not self.session:
+            return ""
+
+        config = self._get_chat_context_config()
+        current_plain = self._plain_text(current_content)
+        query = self._latest_user_query(messages, current_plain)
+        query_for_search = " ".join(part for part in [query, current_plain[-1200:]] if part).strip()
+        parts: list[str] = []
+
+        if current_plain:
+            current_limit = int(config["current_chapter_chars"])
+            parts.append(f"【当前编辑器内容节选】\n{self._clip_text(current_plain[-current_limit:], current_limit)}")
+
+        use_external = bool(selected_doc_ids) or bool(config["suggest_use_external_rag"])
+        if use_external and query_for_search:
+            try:
+                hits = get_knowledge_service().search_external(
+                    user_id=user_id,
+                    project_id=project_id,
+                    query=query_for_search,
+                    top_k=3,
+                    weight=int(config["external_rag_weight"]),
+                    document_ids=selected_doc_ids or None,
+                )
+                if hits:
+                    label = "选中语料参考" if selected_doc_ids else "外部语料参考"
+                    lines = [f"【{label}：只可借鉴，不要直接复制】"]
+                    for i, hit in enumerate(hits, 1):
+                        lines.append(f"[{i}] {self._clip_text(hit.get('text', ''), 500)}")
+                    parts.append("\n".join(lines))
+            except Exception as exc:
+                logger.warning("External RAG context failed: %s", exc)
+
+        if config["chat_use_chapter_rag"] and book_id and query_for_search:
+            try:
+                hits = get_knowledge_service().search_chapters(
+                    user_id=user_id,
+                    book_id=book_id,
+                    query=query_for_search,
+                    top_k=3,
+                )
+                if hits:
+                    lines = ["【全书相关片段：用于保持设定和情节连贯】"]
+                    for i, hit in enumerate(hits, 1):
+                        lines.append(f"[{i}] {self._clip_text(hit.get('text', ''), 500)}")
+                    parts.append("\n".join(lines))
+            except Exception as exc:
+                logger.warning("Chapter RAG context failed: %s", exc)
+
+        if not parts:
+            return ""
+        return "【自动上下文】\n" + "\n\n".join(parts)
+
     # ──────────────────────────────────────────────
     # 信息工具实现（保持不变）
     # ──────────────────────────────────────────────
-    def get_current_chapter(self, current_chapter_id: int, book_id: int) -> str:
+    def get_current_chapter(self, current_chapter_id: int | None, book_id: int | None) -> str:
         """获取当前章节全文（截断至4000字）"""
+        if not current_chapter_id:
+            return "当前没有选中的章节。"
         chapter = get_chapter(self.session, current_chapter_id, book_id=book_id)
         if not chapter:
             return "未找到当前章节内容。"
-        content = chapter.content
+        content = self._plain_text(chapter.content)
         if len(content) > 4000:
             content = content[:4000] + "...（已截断）"
         return f"当前章节内容：\n{content}"
 
-    def get_nearby_chapters_summary(self, current_chapter_id: int, before: int = 2, after: int = 2) -> str:
+    def get_nearby_chapters_summary(self, current_chapter_id: int | None, before: int = 2, after: int = 2) -> str:
         """返回附近章节摘要"""
         if not self.session:
             return ""
+        if not current_chapter_id:
+            return "当前没有选中的章节，无法读取附近章节摘要。"
         nearby = get_nearby_chapter_summaries(
             self.session, current_chapter_id, before_count=before, after_count=after
         )
@@ -266,7 +384,7 @@ class AIService:
         user_id: str = "default_user",
         project_id: str = "default_project",
         use_memory: bool = True,
-        max_tokens: int = 500,
+        max_tokens: int | None = None,
         temperature: float = 0.0,
         current_chapter_id: int | None = None,
         book_id: int | None = None,
@@ -275,17 +393,22 @@ class AIService:
     ):
         # 构建基础 system prompt
         persona = self._get_persona(user_id, project_id)
-        print(f"[DEBUG] _get_persona returned (first 300 chars): {persona[:300]}")
         system_content = persona
         if use_memory:
             memory_ctx = self._get_memory_context(user_id, project_id)
             if memory_ctx:
                 system_content = f"{persona}\n\n{memory_ctx}"
 
-        # 将当前编辑器内容注入 system prompt，让 AI 知道有内容可续写
-        if current_content:
-            preview = current_content[-500:] if len(current_content) > 500 else current_content
-            system_content = f"{system_content}\n\n【当前编辑器内容】\n{preview}"
+        auto_context = self._build_auto_context(
+            messages=messages,
+            current_content=current_content,
+            user_id=user_id,
+            project_id=project_id,
+            book_id=book_id,
+            selected_doc_ids=selected_doc_ids,
+        )
+        if auto_context:
+            system_content = f"{system_content}\n\n{auto_context}"
 
         # 添加可用工具说明，帮助AI知道何时调用RAG工具
         tool_instructions = """
@@ -317,8 +440,6 @@ class AIService:
 """
         system_content = f"{system_content}\n{tool_instructions}"
 
-        print(f"[DEBUG] system_content (first 500 chars): {system_content[:500]}")
-        print(f"[DEBUG] current_content length: {len(current_content)}")
         # 1. 调用非流式 chat 判断是否需要工具
         tool_messages = [{"role": "system", "content": system_content}] + messages
         try:
@@ -329,15 +450,13 @@ class AIService:
                 temperature=0.1,
                 max_tokens=500
             )
-            print(f"[stream_chat] tool phase response: {repr(response_str[:300] if response_str else None)}")
         except Exception as e:
-            print(f"[stream_chat] 工具调用判断失败，降级为普通对话: {e}")
+            logger.info("Tool selection failed, falling back to normal chat: %s", e)
             response_str = ""
-        print(f"[DEBUG] provider.chat response_str: {response_str[:500]}")
+
         # 2. 解析 tool_calls
         try:
             tool_calls = json.loads(response_str)
-            print(f"[stream_chat] parsed tool_calls: {tool_calls}")
             if isinstance(tool_calls, list) and len(tool_calls) > 0:
                 # 将 AI 的工具调用消息添加到对话历史
                 assistant_msg = {
@@ -390,15 +509,13 @@ class AIService:
                             result = f"未知工具: {tool_name}"
                     except Exception as e:
                         result = f"工具 {tool_name} 执行失败: {str(e)}"
-                        print(f"[ERROR] 工具 {tool_name} 异常: {e}")
+                        logger.warning("Tool %s failed: %s", tool_name, e)
 
                     messages.append({"role": "tool", "content": result, "tool_call_id": tool_call_id})
-                    print(f"[DEBUG] tool {tool_name} result: {result[:200] if result else 'empty'}")
+
                 # 所有工具执行完毕后，重新调用流式生成最终回复（不带 tools）
                 final_messages = [{"role": "system", "content": system_content}] + messages
-                print(f"[DEBUG] messages count after tool: {len(messages)}")
                 try:
-                    print(f"[DEBUG] final_messages count: {len(final_messages)}")
                     gen_config = self._get_generation_config()
                     yield from self.provider.stream_chat(
                         messages=final_messages,
@@ -412,13 +529,9 @@ class AIService:
                     return
                 return  # 工具调用后续写完成后直接返回，不再执行下面的普通对话逻辑
         except json.JSONDecodeError:
-            # 不是 tool_calls，说明 AI 直接回复了文本
-            print(f"[DEBUG] response_str is not JSON, treating as direct reply: {response_str[:200]}")
-            if response_str and response_str.strip():
-                # 直接返回 AI 的回复
-                yield response_str
-                return
-            # 如果没有回复，继续普通对话
+            # 不是 tool_calls。工具判断阶段可能直接回复了正文，但它的 token 上限较低；
+            # 忽略这次短回复，继续走正式流式生成，避免回答被截断。
+            pass
 
         # 3. 普通对话（无工具调用或无回复）
         full_messages = [{"role": "system", "content": system_content}] + messages

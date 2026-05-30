@@ -177,6 +177,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(s),
     }),
+  uploadBackgroundImage: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return req<Settings>(`${BASE}/settings/background`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  clearBackgroundImage: () =>
+    req<Settings>(`${BASE}/settings/background`, { method: "DELETE" }),
 
   // ── Knowledge Base ────────────────────────────
   getKnowledgeBases: () =>

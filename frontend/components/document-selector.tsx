@@ -34,7 +34,7 @@ export default function DocumentSelector({
   const headerBg = isDark ? "bg-slate-900 border-slate-700" : isSepia ? "bg-amber-50 border-amber-200" : "bg-white border-slate-100";
   const headingTxt = isDark ? "text-slate-100" : isSepia ? "text-amber-900" : "text-slate-900";
   const mutedTxt = isDark ? "text-slate-500" : isSepia ? "text-amber-500" : "text-slate-400";
-  const itemBg = isDark ? "bg-slate-800 border-slate-700 hover:bg-slate-750" : isSepia ? "bg-amber-100/50 border-amber-200 hover:bg-amber-100" : "bg-white border-slate-200 hover:bg-slate-50";
+  const itemBg = isDark ? "bg-slate-800 border-slate-700 hover:bg-slate-700" : isSepia ? "bg-amber-100/50 border-amber-200 hover:bg-amber-100" : "bg-white border-slate-200 hover:bg-slate-50";
   const selectedBg = isDark ? "bg-slate-700 border-slate-500" : isSepia ? "bg-amber-200 border-amber-400" : "bg-slate-50 border-slate-400";
   const iconBg = isDark ? "bg-slate-700 text-slate-300" : isSepia ? "bg-amber-200 text-amber-700" : "bg-slate-100 text-slate-500";
   const iconSelectedBg = isDark ? "bg-slate-500 text-white" : isSepia ? "bg-amber-700 text-white" : "bg-slate-900 text-white";

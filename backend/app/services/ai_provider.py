@@ -20,9 +20,6 @@ from openai.types.chat import ChatCompletionMessageParam
 import json
 
 class AIProviderError(RuntimeError):
-    pass
-
-class AIProviderError(RuntimeError):
     """把第三方 SDK 异常统一成业务异常，便于在 API 层转换成 HTTP 错误。"""
 
 
@@ -212,4 +209,3 @@ def get_ai_provider(session: Session | None = None) -> BaseAIProvider:
                 api_key = decrypt_api_key(db_settings.openai_api_key_enc)
 
     return AIProviderFactory.get_provider(provider_name, api_key=api_key)
-

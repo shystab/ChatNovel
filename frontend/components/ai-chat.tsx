@@ -3,10 +3,12 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { api } from "@/lib/api";
-import { Send, ArrowLeftRight, Sparkles, RotateCcw, ChevronDown, User, PanelRightClose, Library, Trash2 } from "lucide-react";
+import { Send, ArrowLeftRight, Sparkles, ChevronDown, User, PanelRightClose, Library, Trash2, Plus, FileText, Database } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
 import { Chapter, Conversation } from "@/types/api";
 import DocumentSelector from "@/components/document-selector";
+import ConfirmDialog from "@/components/confirm-dialog";
+import AgentApplyReview from "@/components/agent-apply-review";
 
 interface Preset {
   id: number;
@@ -31,6 +33,7 @@ interface Message {
 
 interface AIChatProps {
   onInsertContent: (content: string) => void;
+  onReplaceContent?: (content: string) => void;
   getEditorContent: () => string;
   theme: Theme;
   colors: ThemeColors;
@@ -63,12 +66,13 @@ function conversationMeta(conv: Conversation) {
   return parts.join(" · ");
 }
 
-export default function AIChat({ onInsertContent, getEditorContent, theme, onToggleRight, bookId, currentChapterId = null }: AIChatProps) {
+export default function AIChat({ onInsertContent, onReplaceContent, getEditorContent, theme, onToggleRight, bookId, chapters = [], currentChapterId = null }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
   const { isStreaming, connect } = useWebSocket();
   const streamBufferRef = useRef("");
   const isFirstExchangeRef = useRef(true);
@@ -84,10 +88,13 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [showConvDropdown, setShowConvDropdown] = useState(false);
   const [cleanupStatus, setCleanupStatus] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
+  const [deletingConversation, setDeletingConversation] = useState(false);
 
   // ── 文档选择 ──────────────────────────────────
   const [showDocSelector, setShowDocSelector] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
+  const [applyProposal, setApplyProposal] = useState("");
 
   const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -209,6 +216,19 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     void Promise.resolve().then(loadPresets);
   }, [loadPresets]);
 
+  useEffect(() => {
+    if (!showConvDropdown && !showPresetDropdown) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (topBarRef.current?.contains(event.target as Node)) return;
+      setShowConvDropdown(false);
+      setShowPresetDropdown(false);
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showConvDropdown, showPresetDropdown]);
+
   const scrollToBottom = () => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   };
@@ -301,7 +321,6 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     startStream({
       type: "chat",
       messages: historyMessages,
-      max_length: 500,
       use_memory: true,
     });
   };
@@ -314,15 +333,39 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     setInput(e.target.value);
   };
 
-  const clearMessages = async () => {
-    const previousId = convIdRef.current;
-    resetDraftConversation();
-    if (previousId) {
-      try {
-        await api.deleteConversation(previousId);
-        setConversations(prev => prev.filter(conv => conv.id !== previousId));
-      } catch {}
+  const openDocSelector = async () => {
+    try {
+      setShowConvDropdown(false);
+      setShowPresetDropdown(false);
+      await ensureConversation();
+      setShowDocSelector(true);
+    } catch {}
+  };
+
+  const handleDocumentSelectionSave = (ids: number[]) => {
+    setSelectedDocIds(ids);
+    if (!convIdRef.current) return;
+    setConversations(prev =>
+      prev.map(conv =>
+        conv.id === convIdRef.current ? { ...conv, selected_doc_ids: ids } : conv
+      )
+    );
+  };
+
+  const handleApplyProposal = (mode: "append" | "replace") => {
+    const proposal = applyProposal.trim();
+    if (!proposal) return;
+    if (mode === "replace" && onReplaceContent) {
+      onReplaceContent(proposal);
+    } else {
+      onInsertContent(proposal);
     }
+    setApplyProposal("");
+  };
+
+  const startNewConversation = () => {
+    resetDraftConversation();
+    setShowConvDropdown(false);
   };
 
   const generateAutoTitle = async (firstUserMsg: string) => {
@@ -342,13 +385,23 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
 
   const deleteConversation = async (conv: Conversation, e: React.MouseEvent) => {
     e.stopPropagation();
+    setDeleteTarget(conv);
+  };
+
+  const confirmDeleteConversation = async () => {
+    if (!deleteTarget) return;
+    setDeletingConversation(true);
     try {
-      await api.deleteConversation(conv.id);
-      setConversations(prev => prev.filter(c => c.id !== conv.id));
-      if (conv.id === convIdRef.current) {
+      await api.deleteConversation(deleteTarget.id);
+      setConversations(prev => prev.filter(c => c.id !== deleteTarget.id));
+      if (deleteTarget.id === convIdRef.current) {
         resetDraftConversation();
       }
-    } catch {}
+      setDeleteTarget(null);
+    } catch {
+    } finally {
+      setDeletingConversation(false);
+    }
   };
 
   const cleanupEmptyConversations = async () => {
@@ -374,17 +427,24 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
   const textClass = theme === 'dark' ? 'text-slate-300' : theme === 'sepia' ? 'text-amber-700' : 'text-slate-700';
   const headingClass = theme === 'dark' ? 'text-slate-100' : theme === 'sepia' ? 'text-amber-900' : 'text-slate-800';
   const hoverBgClass = theme === 'dark' ? 'hover:bg-slate-800' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
-  const inputBgClass = theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500 focus:bg-slate-750' : theme === 'sepia' ? 'bg-amber-100/50 border-amber-200 text-amber-900 placeholder:text-amber-400 focus:border-amber-400 focus:bg-amber-50' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:bg-white';
+  const inputBgClass = theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500 focus:bg-slate-700' : theme === 'sepia' ? 'bg-amber-100/50 border-amber-200 text-amber-900 placeholder:text-amber-400 focus:border-amber-400 focus:bg-amber-50' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:bg-white';
   const sendBtnClass = theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-600' : theme === 'sepia' ? 'bg-amber-800 hover:bg-amber-700 disabled:bg-amber-200 disabled:text-amber-400' : 'bg-slate-900 hover:bg-slate-700 disabled:bg-slate-100 disabled:text-slate-300';
   const dropdownBg = theme === 'dark' ? 'bg-slate-800 border-slate-700' : theme === 'sepia' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200';
   const dropdownItemHover = theme === 'dark' ? 'hover:bg-slate-700' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
   const userMsgBg = theme === 'dark' ? 'bg-slate-700 text-slate-100' : theme === 'sepia' ? 'bg-amber-800 text-white' : 'bg-slate-900 text-white';
   const inputAreaBg = theme === 'dark' ? 'bg-slate-900 border-slate-700/60' : theme === 'sepia' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100';
+  const selectedDropdownBg = theme === 'dark' ? 'bg-slate-700/70' : theme === 'sepia' ? 'bg-amber-100/80' : 'bg-slate-100';
+  const badgeClass = theme === 'dark' ? 'bg-slate-700 text-slate-200' : theme === 'sepia' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600';
+  const contextBarBg = theme === 'dark' ? 'bg-slate-950/45' : theme === 'sepia' ? 'bg-amber-50/55' : 'bg-slate-50/70';
+  const contextPill = theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-400' : theme === 'sepia' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-500';
+  const contextPillActive = theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : theme === 'sepia' ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-slate-100 border-slate-300 text-slate-800';
+  const currentChapter = currentChapterId ? chapters.find(chapter => chapter.id === currentChapterId) ?? null : null;
+  const selectedPreset = selectedPresetId ? presets.find(preset => preset.id === selectedPresetId) ?? null : null;
 
   return (
     <div className={`flex flex-col h-full ${bgClass} border-l ${borderClass}`}>
       {/* 顶部栏 */}
-      <header className={`px-3 py-2 border-b ${borderClass} flex items-center gap-2 ${bgClass} shrink-0`}>
+      <header ref={topBarRef} className={`px-3 py-2 border-b ${borderClass} flex items-center gap-2 ${bgClass} shrink-0`}>
         {/* 对话选择器 */}
         <div className="relative flex-1 min-w-0">
           <div className="flex items-center gap-1">
@@ -422,15 +482,16 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
 
           {/* 对话下拉列表 */}
           {showConvDropdown && (
-            <div className={`absolute top-full left-0 mt-1 w-72 ${dropdownBg} border rounded-xl shadow-xl z-[500] overflow-hidden`}>
+            <div className={`absolute top-full left-0 right-0 mt-1 ${dropdownBg} border rounded-lg shadow-lg z-[500] overflow-hidden`}>
               <div className={`px-3 py-2 border-b ${borderClass} flex items-center justify-between`}>
                 <span className={`text-[9px] font-bold ${mutedClass} uppercase tracking-widest`}>对话列表</span>
                 <button
-                  onClick={async () => { setShowConvDropdown(false); await clearMessages(); }}
-                  className={`text-[9px] ${mutedClass} ${hoverBgClass} px-2 py-0.5 rounded-lg transition-colors`}
+                  onClick={startNewConversation}
+                  className={`inline-flex items-center gap-1 text-[10px] ${textClass} ${hoverBgClass} px-2 py-1 rounded-md transition-colors`}
                   type="button"
                 >
-                  + 新对话
+                  <Plus size={11} />
+                  新对话
                 </button>
               </div>
               <div className="max-h-52 overflow-y-auto">
@@ -441,7 +502,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
                   <div key={conv.id} className="relative group">
                     <button
                       onClick={() => switchConversation(conv)}
-                      className={`w-full px-3 py-2.5 pr-8 text-left ${dropdownItemHover} transition-colors ${conv.id === currentConversationId ? (theme === 'dark' ? 'bg-slate-700' : 'bg-blue-50') : ''}`}
+                      className={`w-full px-3 py-2.5 pr-8 text-left ${dropdownItemHover} transition-colors ${conv.id === currentConversationId ? selectedDropdownBg : ''}`}
                       type="button"
                     >
                       <div className={`text-xs font-semibold truncate ${headingClass}`}>{conv.title || "新对话"}</div>
@@ -466,7 +527,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
                     if (firstUser) { setShowConvDropdown(false); generateAutoTitle(firstUser.content); }
                   }}
                   disabled={!messages.some(m => m.role === "user")}
-                  className={`w-full text-[10px] ${mutedClass} hover:${mutedClass} py-1 disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
+                  className={`w-full text-[10px] ${mutedClass} ${dropdownItemHover} py-1 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors`}
                   type="button"
                   title="根据对话内容自动生成标题"
                 >
@@ -474,7 +535,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
                 </button>
                 <button
                   onClick={cleanupEmptyConversations}
-                  className={`w-full text-[10px] ${mutedClass} hover:${mutedClass} py-1 transition-colors`}
+                  className={`w-full text-[10px] ${mutedClass} ${dropdownItemHover} py-1 rounded-md transition-colors`}
                   type="button"
                 >
                   清理空对话
@@ -493,37 +554,37 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
           <div className="relative">
             <button
               onClick={() => setShowPresetDropdown(!showPresetDropdown)}
-              className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg flex items-center space-x-0.5`}
+              className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg flex items-center gap-0.5`}
               title="选择人格预设"
               type="button"
             >
               <User size={13} />
-              {selectedPresetId && <span className="text-[9px] font-bold text-purple-500">✓</span>}
+              {selectedPresetId && <span className={`text-[9px] font-bold px-1 rounded ${badgeClass}`}>✓</span>}
             </button>
             {showPresetDropdown && (
-              <div className={`absolute top-full right-0 mt-1 w-52 ${dropdownBg} border rounded-xl shadow-xl z-[500] overflow-hidden`}>
+              <div className={`absolute top-full right-0 mt-1 w-60 max-w-[calc(100vw-2rem)] ${dropdownBg} border rounded-lg shadow-lg z-[500] overflow-hidden`}>
                 <div className={`px-3 py-2 border-b ${borderClass}`}>
                   <span className={`text-[9px] font-bold ${mutedClass} uppercase tracking-widest`}>人格预设</span>
                 </div>
                 <div className="max-h-52 overflow-y-auto">
                   <button
                     onClick={() => { setSelectedPresetId(null); setShowPresetDropdown(false); }}
-                    className={`w-full px-3 py-2.5 text-left ${dropdownItemHover} transition-colors ${selectedPresetId === null ? (theme === 'dark' ? 'bg-slate-700' : 'bg-purple-50') : ''}`}
+                    className={`w-full px-3 py-2.5 text-left ${dropdownItemHover} transition-colors ${selectedPresetId === null ? selectedDropdownBg : ''}`}
                     type="button"
                   >
-                    <div className={`text-xs font-bold ${headingClass}`}>默认人格</div>
+                    <div className={`text-xs font-semibold ${headingClass}`}>默认人格</div>
                     <div className={`text-[10px] ${mutedClass} mt-0.5`}>使用系统内置写作助手人格</div>
                   </button>
                   {presets.map(preset => (
                     <button
                       key={preset.id}
                       onClick={() => { setSelectedPresetId(preset.id); setShowPresetDropdown(false); }}
-                      className={`w-full px-3 py-2.5 text-left ${dropdownItemHover} transition-colors ${selectedPresetId === preset.id ? (theme === 'dark' ? 'bg-slate-700' : 'bg-purple-50') : ''}`}
+                      className={`w-full px-3 py-2.5 text-left ${dropdownItemHover} transition-colors ${selectedPresetId === preset.id ? selectedDropdownBg : ''}`}
                       type="button"
                     >
                       <div className="flex items-center justify-between">
-                        <div className={`text-xs font-bold ${headingClass}`}>{preset.name}</div>
-                        {preset.is_enabled && <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-600 rounded-full font-bold">启用</span>}
+                        <div className={`text-xs font-semibold ${headingClass}`}>{preset.name}</div>
+                        {preset.is_enabled && <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold ${badgeClass}`}>启用</span>}
                       </div>
                       {preset.description && <div className={`text-[10px] ${mutedClass} mt-0.5`}>{preset.description}</div>}
                     </button>
@@ -535,12 +596,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
 
           {/* 知识库文档选择 */}
           <button
-            onClick={async () => {
-              try {
-                await ensureConversation();
-                setShowDocSelector(true);
-              } catch {}
-            }}
+            onClick={openDocSelector}
             className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg flex items-center space-x-0.5`}
             title="选择参考文档"
             type="button"
@@ -548,17 +604,6 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
             <Library size={13} />
             {selectedDocIds.length > 0 && <span className="text-[9px] font-bold text-blue-500">{selectedDocIds.length}</span>}
           </button>
-
-          {messages.length > 0 && (
-            <button
-              onClick={clearMessages}
-              className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg`}
-              title="清空对话"
-              type="button"
-            >
-              <RotateCcw size={13} />
-            </button>
-          )}
 
           {/* 关闭 AI 面板 */}
           {onToggleRight && (
@@ -574,13 +619,59 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
         </div>
       </header>
 
+      <div className={`px-3 py-2 border-b ${borderClass} ${contextBarBg} shrink-0`}>
+        <div className="flex flex-wrap gap-1.5">
+          <span
+            className={`inline-flex max-w-full items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium ${currentChapter ? contextPillActive : contextPill}`}
+            title={currentChapter ? `当前章节：${currentChapter.title}` : "还没有选择章节"}
+          >
+            <FileText size={11} className="shrink-0" />
+            <span className="truncate max-w-[11rem]">{currentChapter ? currentChapter.title : "未选章节"}</span>
+          </span>
+          <span
+            className={`inline-flex max-w-full items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium ${selectedPreset ? contextPillActive : contextPill}`}
+            title={selectedPreset ? `当前人格：${selectedPreset.name}` : "使用默认人格"}
+          >
+            <User size={11} className="shrink-0" />
+            <span className="truncate max-w-[9rem]">{selectedPreset ? selectedPreset.name : "默认人格"}</span>
+          </span>
+          <button
+            type="button"
+            onClick={openDocSelector}
+            className={`inline-flex max-w-full items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium transition-colors ${selectedDocIds.length > 0 ? contextPillActive : contextPill} ${dropdownItemHover}`}
+            title={selectedDocIds.length > 0 ? "外部语料检索会优先限制在已选文档" : "未选择外部参考语料"}
+          >
+            <Library size={11} className="shrink-0" />
+            <span>{selectedDocIds.length > 0 ? `语料 ${selectedDocIds.length}` : "未选语料"}</span>
+          </button>
+          <span
+            className={`inline-flex max-w-full items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium ${bookId ? contextPillActive : contextPill}`}
+            title={bookId ? "AI 可按需检索当前作品的章节内容" : "没有书籍上下文"}
+          >
+            <Database size={11} className="shrink-0" />
+            <span>{bookId ? "可检索全书" : "无书籍上下文"}</span>
+          </span>
+        </div>
+      </div>
+
       <DocumentSelector
         conversationId={currentConversationId}
         isOpen={showDocSelector}
         onClose={() => setShowDocSelector(false)}
         initialSelectedIds={selectedDocIds}
-        onSave={(ids) => setSelectedDocIds(ids)}
+        onSave={handleDocumentSelectionSave}
         theme={theme}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除对话"
+        description={`确定要删除“${deleteTarget?.title || "新对话"}”吗？这个操作不可撤销。`}
+        confirmLabel="删除"
+        tone="danger"
+        theme={theme}
+        busy={deletingConversation}
+        onConfirm={confirmDeleteConversation}
+        onCancel={() => setDeleteTarget(null)}
       />
 
       {/* 消息区 */}
@@ -618,12 +709,12 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
                 </div>
                 {!msg.isStreaming && msg.content && (
                   <button
-                    onClick={() => onInsertContent(msg.content)}
+                    onClick={() => setApplyProposal(msg.content)}
                     className={`flex items-center space-x-1.5 text-[10px] font-bold ${mutedClass} ${hoverBgClass} px-2 py-1 rounded-lg transition-colors`}
                     type="button"
                   >
                     <ArrowLeftRight size={10} />
-                    <span>插入编辑器</span>
+                    <span>写入预览</span>
                   </button>
                 )}
               </div>
@@ -656,6 +747,14 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
           </button>
         </div>
       </div>
+      <AgentApplyReview
+        open={Boolean(applyProposal)}
+        theme={theme}
+        currentContent={getEditorContent()}
+        proposal={applyProposal}
+        onCancel={() => setApplyProposal("")}
+        onApply={handleApplyProposal}
+      />
     </div>
   );
 }

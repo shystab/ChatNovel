@@ -6,7 +6,7 @@ import NovelEditor from "@/components/novel-editor";
 import AIChat from "@/components/ai-chat";
 import BookSelector from "@/components/book-selector";
 import { api } from "@/lib/api";
-import { Book, Chapter } from "@/types/api";
+import { Book, Chapter, EditorAppearance } from "@/types/api";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
 import { useTheme } from "@/hooks/use-theme";
@@ -36,6 +36,26 @@ function loadSession(): SessionState | null {
   }
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function textToEditorHtml(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/<[a-z][\s\S]*>/i.test(trimmed)) return trimmed;
+  return trimmed
+    .split(/\n{2,}/)
+    .map(paragraph => paragraph.trim())
+    .filter(Boolean)
+    .map(paragraph => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`)
+    .join("");
+}
+
 export default function Home() {
   // ── 书籍状态 ──────────────────────────────────────
   const [books, setBooks] = useState<Book[]>([]);
@@ -48,6 +68,11 @@ export default function Home() {
   const [content, setContent] = useState("");
   const [status, setStatus] = useState("闲置");
   const [autoSaveInterval, setAutoSaveInterval] = useState(2);
+  const [editorAppearance, setEditorAppearance] = useState<EditorAppearance>({
+    background_blur: 0,
+    background_dim: 22,
+    editor_paper_opacity: 92,
+  });
   const lastSavedRef = useRef("");
 
   const [showLeft, setShowLeft] = useState(true);
@@ -67,6 +92,14 @@ export default function Home() {
       try {
         const settings = await api.getSettings();
         setAutoSaveInterval(Math.max(0, settings.auto_save_interval ?? 2));
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+        setEditorAppearance({
+          background_image_path: settings.background_image_path,
+          background_blur: settings.background_blur ?? 0,
+          background_dim: settings.background_dim ?? 22,
+          editor_paper_opacity: settings.editor_paper_opacity ?? 92,
+          background_url: settings.background_image_path ? `${apiBase}/settings/background?v=${Date.now()}` : undefined,
+        });
       } catch {
         console.error("加载自动保存设置失败");
       }
@@ -212,7 +245,13 @@ export default function Home() {
   );
 
   const insertContent = (text: string) => {
-    setContent((prev) => (prev ? prev + "\n\n" + text : text));
+    const html = textToEditorHtml(text);
+    setContent((prev) => (prev.trim() ? `${prev}<p></p>${html}` : html));
+    setStatus("未保存");
+  };
+
+  const replaceContent = (text: string) => {
+    setContent(textToEditorHtml(text));
     setStatus("未保存");
   };
 
@@ -254,6 +293,21 @@ export default function Home() {
 
   const toggleLeft = () => setShowLeft((v) => !v);
   const toggleRight = () => setShowRight((v) => !v);
+  const editorPanelSize = showLeft && showRight ? 60 : showLeft ? 82 : showRight ? 78 : 100;
+  const resizeLineClass =
+    theme === "dark"
+      ? "bg-slate-700 group-hover:bg-slate-500"
+      : theme === "sepia"
+        ? "bg-amber-200 group-hover:bg-amber-400"
+        : "bg-slate-200 group-hover:bg-slate-400";
+  const resizeHandle = (id: string) => (
+    <PanelResizeHandle
+      id={id}
+      className="group relative w-2 shrink-0 cursor-col-resize outline-none"
+    >
+      <div className={`absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors ${resizeLineClass}`} />
+    </PanelResizeHandle>
+  );
 
   return (
     <main className={`flex min-h-screen h-screen overflow-hidden ${colors.text} ${colors.bg} flex-col`}>
@@ -262,7 +316,7 @@ export default function Home() {
         {/* 左侧：书籍选择器 + 章节列表 */}
         {showLeft && (
           <>
-            <Panel defaultSize={18} minSize={14} maxSize={28}>
+            <Panel id="left-sidebar" order={1} defaultSize={18} minSize={14} maxSize={30}>
               <div className="flex flex-col h-full">
                 {/* 书籍选择器 */}
                 <BookSelector
@@ -288,12 +342,12 @@ export default function Home() {
                 </div>
               </div>
             </Panel>
-            <PanelResizeHandle className={`w-px ${colors.border} transition-colors cursor-col-resize hover:bg-slate-300`} />
+            {resizeHandle("left-resize")}
           </>
         )}
 
         {/* 中间：编辑器 */}
-        <Panel defaultSize={showLeft && showRight ? 64 : showLeft || showRight ? 82 : 100} minSize={40}>
+        <Panel id="editor" order={2} defaultSize={editorPanelSize} minSize={35}>
           <div className={`flex flex-col h-full relative ${colors.editorBg}`}>
             <NovelEditor
               chapter={chapter}
@@ -307,6 +361,7 @@ export default function Home() {
               showRight={showRight}
               onToggleLeft={toggleLeft}
               onToggleRight={toggleRight}
+              appearance={editorAppearance}
             />
           </div>
         </Panel>
@@ -314,10 +369,11 @@ export default function Home() {
         {/* 右侧：AI 对话 */}
         {showRight && (
           <>
-            <PanelResizeHandle className={`w-px ${colors.border} transition-colors cursor-col-resize hover:bg-slate-300`} />
-            <Panel defaultSize={18} minSize={16} maxSize={32}>
+            {resizeHandle("right-resize")}
+            <Panel id="ai-sidebar" order={3} defaultSize={22} minSize={18} maxSize={42}>
               <AIChat
                 onInsertContent={insertContent}
+                onReplaceContent={replaceContent}
                 getEditorContent={getEditorContent}
                 theme={theme}
                 colors={colors}

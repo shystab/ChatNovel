@@ -20,6 +20,10 @@ class SettingBase(SQLModel):
     summary_auto_generate: Annotated[bool, Field(default=True, description="章节保存时自动生成摘要")]  # 章节保存时自动生成摘要
     summary_generation_style: Annotated[str, Field(default="concise", description="摘要生成风格：concise(简洁)/detailed(详细)/extract_first(提取首段)")]  # 摘要生成风格
     workspace_dir: Annotated[str, Field(default="./workspace", description="小说作品文件夹根目录")]
+    background_image_path: Annotated[str | None, Field(default=None, description="编辑器背景图相对作品文件夹路径")]
+    background_blur: Annotated[int, Field(default=0, ge=0, le=24, description="背景模糊强度")]
+    background_dim: Annotated[int, Field(default=22, ge=0, le=85, description="背景遮罩暗度")]
+    editor_paper_opacity: Annotated[int, Field(default=92, ge=55, le=100, description="编辑器纸张透明度")]
     # 分层记忆配置
     current_chapter_chars: Annotated[int, Field(default=4000, ge=500, le=8000, description="当前章节注入最大长度（字符数）")]
     nearby_chapter_count: Annotated[int, Field(default=3, ge=1, le=5, description="附近章节数量（前后总计）")]
@@ -56,6 +60,10 @@ class SettingUpdate(SQLModel):
     summary_auto_generate: Annotated[bool | None, Field(default=None, description="章节保存时自动生成摘要")]
     summary_generation_style: Annotated[str | None, Field(default=None, description="摘要生成风格：concise(简洁)/detailed(详细)/extract_first(提取首段)")]
     workspace_dir: Annotated[str | None, Field(default=None, description="小说作品文件夹根目录")]
+    background_image_path: Annotated[str | None, Field(default=None, description="编辑器背景图相对作品文件夹路径")]
+    background_blur: Annotated[int | None, Field(default=None, ge=0, le=24, description="背景模糊强度")]
+    background_dim: Annotated[int | None, Field(default=None, ge=0, le=85, description="背景遮罩暗度")]
+    editor_paper_opacity: Annotated[int | None, Field(default=None, ge=55, le=100, description="编辑器纸张透明度")]
     current_chapter_chars: Annotated[int | None, Field(default=None, ge=500, le=8000, description="当前章节注入最大长度（字符数）")]
     nearby_chapter_count: Annotated[int | None, Field(default=None, ge=1, le=5, description="附近章节数量（前后总计）")]
     inject_nearby_summaries: Annotated[bool | None, Field(default=None, description="是否注入附近章节摘要")]

@@ -105,6 +105,10 @@ export interface Settings {
   summary_auto_generate: boolean;
   summary_generation_style: string;
   workspace_dir: string;
+  background_image_path?: string | null;
+  background_blur: number;
+  background_dim: number;
+  editor_paper_opacity: number;
   // 分层记忆
   current_chapter_chars?: number;
   nearby_chapter_count?: number;
@@ -130,6 +134,10 @@ export interface SettingsUpdate {
   summary_auto_generate?: boolean;
   summary_generation_style?: string;
   workspace_dir?: string;
+  background_image_path?: string | null;
+  background_blur?: number;
+  background_dim?: number;
+  editor_paper_opacity?: number;
   // 分层记忆
   current_chapter_chars?: number;
   nearby_chapter_count?: number;
@@ -139,6 +147,14 @@ export interface SettingsUpdate {
   suggest_use_external_rag?: boolean;
   chat_use_chapter_rag?: boolean;
   external_rag_weight?: number;
+}
+
+export interface EditorAppearance {
+  background_image_path?: string | null;
+  background_blur: number;
+  background_dim: number;
+  editor_paper_opacity: number;
+  background_url?: string;
 }
 
 export interface AIWSRequest {

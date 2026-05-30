@@ -1,7 +1,8 @@
 """
 设置 API 接口 - HTTP 请求处理
 """
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlmodel import Session
 from typing import Annotated
 
@@ -9,6 +10,11 @@ from app.db.session import get_session  # 获取数据库会话的依赖
 from app.models.setting import Setting, SettingUpdate, SettingResponse  # Pydantic 模型
 from app.crud.settings_crud import get_settings, update_settings  # CRUD 函数
 from app.core.config import settings as app_settings
+from app.services.workspace_service import (
+    delete_background_image,
+    resolve_workspace_relative_path,
+    save_background_image,
+)
 
 
 # 创建路由实例
@@ -82,3 +88,49 @@ def update_all_settings(
     # 调用 CRUD 函数更新设置
     updated = update_settings(session, settings)
     return _to_response(updated)
+
+
+@router.post("/background", response_model=SettingResponse)
+async def upload_background_image(
+    file: Annotated[UploadFile, File()],
+    session: Annotated[Session, Depends(get_session)],
+):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image files are supported")
+
+    data = await file.read()
+    if len(data) > 12 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Image must be smaller than 12MB")
+
+    db_settings = get_settings(session)
+    old_path = db_settings.background_image_path if db_settings else None
+    relative_path = save_background_image(file.filename or "background.jpg", data)
+    delete_background_image(old_path)
+    updated = update_settings(session, SettingUpdate(background_image_path=relative_path))
+    return _to_response(updated)
+
+
+@router.delete("/background", response_model=SettingResponse)
+def clear_background_image(
+    session: Annotated[Session, Depends(get_session)],
+):
+    db_settings = get_settings(session)
+    delete_background_image(db_settings.background_image_path if db_settings else None)
+    updated = update_settings(session, SettingUpdate(background_image_path=None))
+    return _to_response(updated)
+
+
+@router.get("/background")
+def read_background_image(
+    session: Annotated[Session, Depends(get_session)],
+):
+    db_settings = get_settings(session)
+    if not db_settings or not db_settings.background_image_path:
+        raise HTTPException(status_code=404, detail="Background image not found")
+    try:
+        path = resolve_workspace_relative_path(db_settings.background_image_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid background image path") from exc
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Background image not found")
+    return FileResponse(path)

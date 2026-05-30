@@ -25,7 +25,7 @@ class AIWSRequest(SQLModel):
     selected_doc_ids: List[int] = Field(default_factory=list)
     content: str = Field(default="")
     use_memory: bool = Field(default=True)
-    max_length: int = Field(default=500)
+    max_length: int | None = Field(default=None)
     analysis_enabled: bool = Field(default=False)
     analysis_interval_chars: int = Field(default=200)
     analysis_types: List[str] = Field(default_factory=lambda: ["repetition", "length"])

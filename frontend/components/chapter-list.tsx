@@ -5,6 +5,7 @@ import { Chapter } from "@/types/api";
 import { api } from "@/lib/api";
 import { Download, Plus, Settings, Trash2, Pencil, Check, X, PanelLeftClose, FileText } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
+import ConfirmDialog from "@/components/confirm-dialog";
 
 interface ChapterListProps {
   bookId: number | null;
@@ -186,6 +187,8 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const editInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -245,17 +248,25 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
 
   const handleDelete = async (chapter: Chapter, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm(`确定删除「${chapter.title}」？此操作不可撤销。`)) return;
+    setDeleteTarget(chapter);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
       if (bookId) {
-        await api.deleteChapterInBook(bookId, chapter.id);
+        await api.deleteChapterInBook(bookId, deleteTarget.id);
       } else {
-        await api.deleteChapter(chapter.id);
+        await api.deleteChapter(deleteTarget.id);
       }
-      onChaptersChange(chapters.filter(c => c.id !== chapter.id));
-      if (selectedChapterId === chapter.id) onChapterSelect(-1);
+      onChaptersChange(chapters.filter(c => c.id !== deleteTarget.id));
+      if (selectedChapterId === deleteTarget.id) onChapterSelect(-1);
+      setDeleteTarget(null);
     } catch (error) {
       console.error("Failed to delete chapter", error);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -265,6 +276,7 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
   const textClass = theme === 'dark' ? 'text-slate-300' : theme === 'sepia' ? 'text-amber-700' : 'text-slate-600';
   const headingClass = theme === 'dark' ? 'text-slate-100' : theme === 'sepia' ? 'text-amber-900' : 'text-slate-900';
   const mutedClass = theme === 'dark' ? 'text-slate-500' : theme === 'sepia' ? 'text-amber-500' : 'text-slate-400';
+  const hoverTextClass = theme === 'dark' ? 'hover:text-slate-300' : theme === 'sepia' ? 'hover:text-amber-700' : 'hover:text-slate-600';
   const hoverBgClass = theme === 'dark' ? 'hover:bg-slate-800' : theme === 'sepia' ? 'hover:bg-amber-100/80' : 'hover:bg-white/80';
   const selectedBgClass = theme === 'dark' ? 'bg-slate-800 ring-slate-700' : theme === 'sepia' ? 'bg-amber-100 ring-amber-300' : 'bg-white ring-slate-200';
 
@@ -351,7 +363,7 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
                       <div className="flex items-center space-x-0.5 shrink-0">
                         <button
                           onClick={(e) => startEdit(chapter, e)}
-                          className={`p-1 ${mutedClass} hover:${textClass} rounded transition-colors`}
+                          className={`p-1 ${mutedClass} ${hoverTextClass} rounded transition-colors`}
                           type="button"
                           title="重命名"
                         >
@@ -402,6 +414,17 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
           theme={theme}
         />
       )}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="删除章节"
+        description={`确定删除「${deleteTarget?.title || "未命名章节"}」吗？这个操作不可撤销。`}
+        confirmLabel="删除"
+        tone="danger"
+        theme={theme}
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

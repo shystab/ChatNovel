@@ -121,6 +121,47 @@ def _configured_workspace_dir() -> str:
     return settings.NOVEL_WORKSPACE_DIR
 
 
+def workspace_relative_path(path: Path) -> str:
+    return path.relative_to(workspace_root()).as_posix()
+
+
+def resolve_workspace_relative_path(value: str) -> Path:
+    root = workspace_root().resolve()
+    path = (root / value).resolve()
+    if root not in path.parents and path != root:
+        raise ValueError("Path must stay inside workspace")
+    return path
+
+
+def background_assets_folder() -> Path:
+    folder = workspace_root() / ".assets" / "backgrounds"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def save_background_image(filename: str, data: bytes) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        suffix = ".jpg"
+
+    folder = background_assets_folder()
+    for old_file in folder.glob("editor-background.*"):
+        old_file.unlink(missing_ok=True)
+
+    path = folder / f"editor-background{suffix}"
+    path.write_bytes(data)
+    return workspace_relative_path(path)
+
+
+def delete_background_image(relative_path: str | None) -> None:
+    if not relative_path:
+        return
+    try:
+        resolve_workspace_relative_path(relative_path).unlink(missing_ok=True)
+    except ValueError:
+        return
+
+
 def book_folder(book: Book | None, book_id: int | None = None) -> Path:
     if book:
         name = f"{book.id:03d}-{safe_filename(book.title, 'book')}"

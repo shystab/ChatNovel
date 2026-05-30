@@ -10,7 +10,7 @@ import Blockquote from "@tiptap/extension-blockquote";
 import Code from "@tiptap/extension-code";
 import CodeBlock from "@tiptap/extension-code-block";
 import { TextStyle } from "@tiptap/extension-text-style";
-import { Chapter } from "@/types/api";
+import { Chapter, EditorAppearance } from "@/types/api";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
 import {
   Save,
@@ -22,10 +22,6 @@ import {
   Heading2,
   Quote,
   Code as CodeIcon,
-  PanelLeftOpen,
-  PanelRightOpen,
-  PanelLeftClose,
-  PanelRightClose,
 } from "lucide-react";
 import { useEffect, useCallback } from "react";
 
@@ -41,6 +37,7 @@ interface RichEditorProps {
   showRight?: boolean;
   onToggleLeft?: () => void;
   onToggleRight?: () => void;
+  appearance?: EditorAppearance;
 }
 
 function wordCount(text: string) {
@@ -63,10 +60,7 @@ export default function RichEditor({
   onSave,
   theme,
   colors,
-  showLeft,
-  showRight,
-  onToggleLeft,
-  onToggleRight,
+  appearance,
 }: RichEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -138,36 +132,44 @@ export default function RichEditor({
   const toolbarBtn = `p-1.5 rounded transition-all ${textClass}`;
   const toolbarBtnActive = theme === 'dark' ? 'bg-slate-700' : theme === 'sepia' ? 'bg-amber-200' : 'bg-slate-200';
 
-  const panelBtnClass = `p-1.5 rounded-md transition-all ${
-    theme === 'dark'
-      ? 'text-slate-500 hover:text-slate-300 hover:bg-slate-700'
-      : theme === 'sepia'
-      ? 'text-amber-400 hover:text-amber-800 hover:bg-amber-100'
-      : 'text-slate-300 hover:text-slate-600 hover:bg-slate-100'
-  }`;
+  const hasBackground = Boolean(appearance?.background_url);
+  const backgroundDim = Math.min(Math.max(appearance?.background_dim ?? 22, 0), 85) / 100;
+  const paperOpacity = Math.min(Math.max(appearance?.editor_paper_opacity ?? 92, 55), 100) / 100;
+  const paperBg = theme === 'dark'
+    ? `rgba(15, 23, 42, ${paperOpacity})`
+    : theme === 'sepia'
+    ? `rgba(255, 251, 235, ${paperOpacity})`
+    : `rgba(255, 255, 255, ${paperOpacity})`;
+  const chromeBg = hasBackground
+    ? theme === 'dark' ? 'bg-slate-950/70 backdrop-blur-xl' : theme === 'sepia' ? 'bg-amber-50/78 backdrop-blur-xl' : 'bg-white/78 backdrop-blur-xl'
+    : colors.editorBg;
+  const backgroundLayers = hasBackground ? (
+    <>
+      <div
+        className="absolute inset-0 z-0 bg-cover bg-center"
+        style={{
+          backgroundImage: `url(${appearance?.background_url})`,
+          filter: `blur(${appearance?.background_blur ?? 0}px)`,
+          transform: `scale(${appearance?.background_blur ? 1.04 : 1})`,
+        }}
+      />
+      <div
+        className="absolute inset-0 z-0"
+        style={{ backgroundColor: `rgba(0, 0, 0, ${backgroundDim})` }}
+      />
+    </>
+  ) : null;
 
   if (!chapter) {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center ${colors.editorBg} space-y-6 h-full`}>
-        <div className={`w-16 h-16 rounded-3xl ${theme === 'dark' ? 'bg-slate-800' : 'bg-slate-50'} flex items-center justify-center`}>
+      <div className={`flex-1 flex flex-col items-center justify-center ${colors.editorBg} space-y-6 h-full relative overflow-hidden`}>
+        {backgroundLayers}
+        <div className={`relative z-10 w-16 h-16 rounded-lg ${theme === 'dark' ? 'bg-slate-800/80' : 'bg-slate-50/90'} flex items-center justify-center`}>
           <FileText size={28} strokeWidth={1.5} className={theme === 'dark' ? 'text-slate-600' : 'text-slate-300'} />
         </div>
-        <div className="text-center space-y-1.5">
+        <div className="relative z-10 text-center space-y-1.5">
           <p className={`text-sm font-semibold ${theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}`}>选择章节开始写作</p>
           <p className={`text-[11px] ${theme === 'dark' ? 'text-slate-600' : 'text-slate-300'}`}>从左侧目录选择或新建章节</p>
-        </div>
-        {/* 收起状态下在空白页也显示展开按钮 */}
-        <div className="absolute top-4 left-4 flex items-center space-x-1">
-          {!showLeft && onToggleLeft && (
-            <button onClick={onToggleLeft} className={panelBtnClass} title="显示目录" type="button">
-              <PanelLeftOpen size={16} />
-            </button>
-          )}
-          {!showRight && onToggleRight && (
-            <button onClick={onToggleRight} className={`${panelBtnClass} ml-auto`} title="显示 AI" type="button">
-              <PanelRightOpen size={16} />
-            </button>
-          )}
         </div>
       </div>
     );
@@ -175,19 +177,11 @@ export default function RichEditor({
 
   return (
     <div className={`flex flex-col h-full ${colors.editorBg} relative overflow-hidden`}>
+      {backgroundLayers}
       {/* 顶部工具栏 */}
-      <header className={`px-5 py-2.5 border-b ${borderClass} flex justify-between items-center ${colors.editorBg} z-30 shrink-0`}>
-        {/* 左侧：面板切换 + 章节标题 */}
+      <header className={`px-5 py-2.5 border-b ${borderClass} flex justify-between items-center ${chromeBg} z-30 shrink-0`}>
+        {/* 左侧：章节标题 */}
         <div className="flex items-center space-x-2 min-w-0">
-          {/* 面板切换按钮（始终在工具栏左侧，不遮挡正文） */}
-          {onToggleLeft && (
-            <button onClick={onToggleLeft} className={panelBtnClass} title={showLeft ? "收起目录" : "展开目录"} type="button">
-              {showLeft ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-            </button>
-          )}
-
-          <div className="w-px h-4 bg-current opacity-10 shrink-0" />
-
           <h1 className={`font-bold ${headingClass} text-sm tracking-tight truncate max-w-[220px]`}>
             {chapter.title}
           </h1>
@@ -204,7 +198,7 @@ export default function RichEditor({
           </div>
         </div>
 
-        {/* 右侧：编辑工具 + 统计 + 保存 + 面板切换 */}
+        {/* 右侧：编辑工具 + 统计 + 保存 */}
         <div className="flex items-center space-x-3 shrink-0">
           {/* 编辑工具栏 */}
           <div className={`hidden md:flex items-center space-x-0.5 p-1 rounded-lg ${toolbarBg}`}>
@@ -279,28 +273,27 @@ export default function RichEditor({
             <span>保存</span>
           </button>
 
-          {/* 右侧面板切换 */}
-          {onToggleRight && (
-            <button onClick={onToggleRight} className={panelBtnClass} title={showRight ? "收起 AI" : "展开 AI"} type="button">
-              {showRight ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-            </button>
-          )}
         </div>
       </header>
 
       {/* 编辑区 — 舒适的阅读宽度 + 大行距 */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar relative" onKeyDown={handleKeyDown}>
-        <div className="w-full max-w-[760px] mx-auto py-12 sm:py-16 px-5 sm:px-10 min-h-full">
+      <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10" onKeyDown={handleKeyDown}>
+        <div className="w-full max-w-[820px] mx-auto py-10 sm:py-14 px-4 sm:px-8 min-h-full">
+          <div
+            className={`min-h-[72vh] rounded-lg ${hasBackground ? 'shadow-sm ring-1 ring-black/5' : ''}`}
+            style={{ backgroundColor: hasBackground ? paperBg : 'transparent', backdropFilter: hasBackground ? 'blur(12px)' : undefined }}
+          >
           <style>{`
             .novel-writing-surface {
-              font-size: 17px;
-              line-height: 2.05;
+              font-size: 18px;
+              line-height: 2.1;
               letter-spacing: 0;
               text-rendering: optimizeLegibility;
               caret-color: currentColor;
+              padding: ${hasBackground ? '3rem 3.25rem' : '0'};
             }
             .novel-writing-surface p {
-              margin: 0 0 0.85em;
+              margin: 0 0 0.8em;
               text-indent: 2em;
             }
             .novel-writing-surface h1,
@@ -330,11 +323,12 @@ export default function RichEditor({
             editor={editor}
             className={`w-full min-h-[70vh] focus:outline-none ${textClass}`}
           />
+          </div>
         </div>
       </main>
 
       {/* 底部状态栏 */}
-      <div className={`px-6 py-2 border-t ${borderClass} flex items-center justify-between shrink-0`}>
+      <div className={`px-6 py-2 border-t ${borderClass} flex items-center justify-between shrink-0 relative z-30 ${chromeBg}`}>
         <span className={`text-[10px] font-bold ${mutedClass} uppercase tracking-wider`}>{chars.toLocaleString()} 字符</span>
         <div className="flex items-center space-x-4">
           <span className={`text-[10px] ${mutedClass} hidden sm:block`}>Tab 缩进 · Ctrl+Enter 保存</span>

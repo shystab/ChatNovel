@@ -17,8 +17,10 @@ from app.services.workspace_service import (
     build_docx_export,
     build_txt_export,
     content_disposition,
+    delete_chapter_files,
     safe_filename,
     sync_book_workspace,
+    sync_library_workspace,
     write_chapter_file,
     write_project_manifest,
 )
@@ -144,6 +146,19 @@ def delete_book(
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     book_crud.delete_book(session, book)
+
+
+@router.post("/workspace/sync", summary="同步全部作品到作品文件夹")
+def sync_library_to_workspace(
+    session: Annotated[Session, Depends(get_session)],
+):
+    books = book_crud.get_books(session, limit=1000)
+    items = [
+        (book, get_chapters_by_book(session, book.id, limit=5000))
+        for book in books
+        if book.id is not None
+    ]
+    return sync_library_workspace(items)
 
 
 # ── Chapter Sub-Resource ───────────────────────────────────────────────────────
@@ -283,4 +298,5 @@ def delete_chapter_in_book(
     chapter = get_chapter(session, chapter_id, book_id=book_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
+    delete_chapter_files(chapter)
     delete_chapter(session, chapter)

@@ -26,7 +26,7 @@ import PersonaManager from "@/components/persona-manager";
 import { useTheme } from "@/hooks/use-theme";
 
 export default function SettingsPage() {
-  const { theme, setTheme, colors } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,6 +39,9 @@ export default function SettingsPage() {
   const [summaryAutoGenerate, setSummaryAutoGenerate] = useState(true);
   const [summaryGenerationStyle, setSummaryGenerationStyle] = useState("concise");
   const [autoSaveInterval, setAutoSaveInterval] = useState(30);
+  const [workspaceDir, setWorkspaceDir] = useState("./workspace");
+  const [workspaceSyncStatus, setWorkspaceSyncStatus] = useState("");
+  const [workspaceSyncing, setWorkspaceSyncing] = useState(false);
 
   // 分层记忆和RAG设置
   const [currentChapterChars, setCurrentChapterChars] = useState(4000);
@@ -77,6 +80,7 @@ export default function SettingsPage() {
       setSummaryAutoGenerate(data.summary_auto_generate ?? true);
       setSummaryGenerationStyle(data.summary_generation_style || "concise");
       setAutoSaveInterval(data.auto_save_interval ?? 30);
+      setWorkspaceDir(data.workspace_dir || "./workspace");
       // 分层记忆和RAG设置
       setCurrentChapterChars(data.current_chapter_chars ?? 4000);
       setNearbyChapterCount(data.nearby_chapter_count ?? 3);
@@ -128,6 +132,7 @@ export default function SettingsPage() {
         summary_auto_generate: summaryAutoGenerate,
         summary_generation_style: summaryGenerationStyle,
         auto_save_interval: autoSaveInterval,
+        workspace_dir: workspaceDir.trim() || "./workspace",
         // 分层记忆和RAG设置
         current_chapter_chars: currentChapterChars,
         nearby_chapter_count: nearbyChapterCount,
@@ -145,16 +150,31 @@ export default function SettingsPage() {
       setApiKeyInput("");
       await loadSettings();
       showToast("配置已保存", true);
-    } catch { showToast("保存失败，请重试", false); }
+      return true;
+    } catch {
+      showToast("保存失败，请重试", false);
+      return false;
+    }
     finally { setSaving(false); }
   };
 
-  const providers = [
-    { id: "deepseek", name: "DeepSeek", description: "极致性价比，中文创作首选", icon: "V" },
-    { id: "openai", name: "OpenAI", description: "行业标杆，逻辑性极强", icon: "O" },
-    { id: "claude", name: "Claude", description: "文学性极佳 (即将支持)", disabled: true, icon: "C" },
-    { id: "ollama", name: "Ollama", description: "本地模型，隐私无忧 (即将支持)", disabled: true, icon: "L" },
-  ];
+  const handleWorkspaceSync = async () => {
+    setWorkspaceSyncing(true);
+    setWorkspaceSyncStatus("正在同步作品库...");
+    try {
+      const saved = await handleSave();
+      if (!saved) {
+        setWorkspaceSyncStatus("设置保存失败，未同步作品库");
+        return;
+      }
+      const result = await api.syncWorkspaceLibrary();
+      setWorkspaceSyncStatus(`已同步 ${result.book_count} 本书、${result.chapter_count} 章到 ${result.workspace}`);
+    } catch {
+      setWorkspaceSyncStatus("作品库同步失败");
+    } finally {
+      setWorkspaceSyncing(false);
+    }
+  };
 
   // ── 主题相关样式 ─────────────────────────────────────────────────────────────
   const isDark = theme === 'dark';
@@ -171,10 +191,6 @@ export default function SettingsPage() {
   const navInactive = isDark ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200' : isSepia ? 'text-amber-600 hover:bg-amber-100 hover:text-amber-900' : 'text-slate-500 hover:bg-slate-100';
   const inputCls = isDark ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500' : isSepia ? 'bg-amber-50 border-amber-300 text-amber-900 placeholder:text-amber-400 focus:border-amber-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-300 focus:border-slate-400';
   const primaryBtn = isDark ? 'bg-slate-700 hover:bg-slate-600 text-white shadow-slate-900' : isSepia ? 'bg-amber-800 hover:bg-amber-700 text-white shadow-amber-300' : 'bg-slate-900 hover:bg-slate-800 text-white shadow-slate-200';
-  const providerSelected = isDark ? 'border-slate-400 bg-slate-800 shadow-slate-900 ring-slate-700' : isSepia ? 'border-amber-700 bg-amber-50 shadow-amber-200 ring-amber-200' : 'border-slate-900 bg-white shadow-slate-100 ring-slate-100';
-  const providerNormal = isDark ? 'border-slate-700 bg-slate-800 hover:border-slate-500' : isSepia ? 'border-amber-200 bg-amber-50 hover:border-amber-400' : 'border-white bg-white hover:border-slate-200';
-  const providerIconSelected = isDark ? 'bg-slate-600 text-white' : isSepia ? 'bg-amber-700 text-white' : 'bg-slate-900 text-white';
-  const providerIconNormal = isDark ? 'bg-slate-700 text-slate-400' : isSepia ? 'bg-amber-200 text-amber-600' : 'bg-slate-100 text-slate-400';
   const hoverRow = isDark ? 'hover:bg-slate-800' : isSepia ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
 
   return (
@@ -379,9 +395,9 @@ export default function SettingsPage() {
                   <section className="space-y-5">
                     <div className={`flex items-center space-x-2 border-b ${borderCls} pb-4`}>
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
-                      <h2 className={`text-lg font-bold ${headingTxt}`}>保存行为</h2>
+                      <h2 className={`text-lg font-bold ${headingTxt}`}>保存与文件</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-4`}>
+                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-5`}>
                       <div>
                         <label className={`text-sm font-bold ${headingTxt}`}>自动保存间隔（秒）</label>
                         <p className={`text-xs ${mutedTxt} mt-0.5 mb-3`}>编辑器停止输入后多少秒自动保存，设为 0 则禁用自动保存</p>
@@ -393,6 +409,30 @@ export default function SettingsPage() {
                           onChange={(e) => setAutoSaveInterval(parseInt(e.target.value) || 0)}
                           className={`w-40 border-2 rounded-2xl px-6 py-4 text-sm focus:ring-4 outline-none transition-all ${inputCls}`}
                         />
+                      </div>
+                      <div>
+                        <label className={`text-sm font-bold ${headingTxt}`}>作品文件夹</label>
+                        <p className={`text-xs ${mutedTxt} mt-0.5 mb-3`}>章节 TXT、项目清单和导出文件默认同步到这里；可以填 D 盘或移动硬盘路径。</p>
+                        <input
+                          type="text"
+                          value={workspaceDir}
+                          onChange={(e) => setWorkspaceDir(e.target.value)}
+                          placeholder="D:\\Novels\\VibeWriter"
+                          className={`w-full border-2 rounded-2xl px-6 py-4 text-sm focus:ring-4 outline-none transition-all font-mono ${inputCls}`}
+                        />
+                        <div className="flex items-center gap-3 mt-3">
+                          <button
+                            type="button"
+                            onClick={handleWorkspaceSync}
+                            disabled={workspaceSyncing}
+                            className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                          >
+                            {workspaceSyncing ? "同步中..." : "同步整个作品库"}
+                          </button>
+                          {workspaceSyncStatus && (
+                            <span className={`text-[10px] ${mutedTxt} truncate`}>{workspaceSyncStatus}</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </section>

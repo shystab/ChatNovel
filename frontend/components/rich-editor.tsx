@@ -108,7 +108,7 @@ export default function RichEditor({
 
   // 章节切换时自动聚焦到编辑器末尾
   useEffect(() => {
-    if (editor && chapter) {
+    if (editor && chapter?.id) {
       setTimeout(() => {
         editor.commands.focus("end");
       }, 50);

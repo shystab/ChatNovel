@@ -104,6 +104,7 @@ export interface Settings {
   max_tokens?: number;
   summary_auto_generate: boolean;
   summary_generation_style: string;
+  workspace_dir: string;
   // 分层记忆
   current_chapter_chars?: number;
   nearby_chapter_count?: number;
@@ -128,6 +129,7 @@ export interface SettingsUpdate {
   max_tokens?: number;
   summary_auto_generate?: boolean;
   summary_generation_style?: string;
+  workspace_dir?: string;
   // 分层记忆
   current_chapter_chars?: number;
   nearby_chapter_count?: number;

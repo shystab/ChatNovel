@@ -21,7 +21,6 @@ export default function BookSelector({
   onSwitch,
   onBooksChange,
   theme,
-  colors,
 }: BookSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -93,7 +92,6 @@ export default function BookSelector({
   };
 
   // 主题色
-  const bg = theme === "dark" ? "bg-slate-900" : theme === "sepia" ? "bg-amber-50/80" : "bg-slate-50/60";
   const border = theme === "dark" ? "border-slate-700" : theme === "sepia" ? "border-amber-200" : "border-slate-200";
   const text = theme === "dark" ? "text-slate-200" : theme === "sepia" ? "text-amber-900" : "text-slate-800";
   const muted = theme === "dark" ? "text-slate-400" : theme === "sepia" ? "text-amber-600" : "text-slate-500";

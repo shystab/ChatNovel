@@ -8,6 +8,7 @@ from typing import Annotated
 from app.db.session import get_session  # 获取数据库会话的依赖
 from app.models.setting import Setting, SettingUpdate, SettingResponse  # Pydantic 模型
 from app.crud.settings_crud import get_settings, update_settings  # CRUD 函数
+from app.core.config import settings as app_settings
 
 
 # 创建路由实例
@@ -49,6 +50,7 @@ def read_settings(
             auto_save_interval=30,
             language="zh-CN",
             editor_mode="write",
+            workspace_dir=app_settings.NOVEL_WORKSPACE_DIR,
         )
         session.add(settings)
         session.commit()

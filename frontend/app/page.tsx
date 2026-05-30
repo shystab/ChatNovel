@@ -47,6 +47,7 @@ export default function Home() {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [content, setContent] = useState("");
   const [status, setStatus] = useState("闲置");
+  const [autoSaveInterval, setAutoSaveInterval] = useState(2);
   const lastSavedRef = useRef("");
 
   const [showLeft, setShowLeft] = useState(true);
@@ -61,6 +62,13 @@ export default function Home() {
       if (savedSession) {
         setShowLeft(savedSession.showLeft);
         setShowRight(savedSession.showRight);
+      }
+
+      try {
+        const settings = await api.getSettings();
+        setAutoSaveInterval(Math.max(0, settings.auto_save_interval ?? 2));
+      } catch {
+        console.error("加载自动保存设置失败");
       }
 
       // 2. 加载书籍列表
@@ -127,7 +135,6 @@ export default function Home() {
       }
     }
     void init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── 持久化 session ────────────────────────────────
@@ -206,9 +213,17 @@ export default function Home() {
 
   const insertContent = (text: string) => {
     setContent((prev) => (prev ? prev + "\n\n" + text : text));
+    setStatus("未保存");
   };
 
   const getEditorContent = useCallback(() => content, [content]);
+
+  const handleContentChange = useCallback((nextContent: string) => {
+    setContent(nextContent);
+    if (selectedChapterId && nextContent !== lastSavedRef.current) {
+      setStatus("未保存");
+    }
+  }, [selectedChapterId]);
 
   const handleSave = useCallback(async () => {
     if (!selectedChapterId) return;
@@ -226,16 +241,16 @@ export default function Home() {
     }
   }, [selectedChapterId, content, activeBookId]);
 
-  // 自动保存（2秒防抖）
+  // 自动保存（按设置页配置的秒数防抖；0 表示关闭）
   useEffect(() => {
     if (!selectedChapterId) return;
+    if (autoSaveInterval <= 0) return;
     if (content === lastSavedRef.current) return;
-    setStatus("未保存");
     const timer = setTimeout(() => {
       void handleSave();
-    }, 2000);
+    }, autoSaveInterval * 1000);
     return () => clearTimeout(timer);
-  }, [content, selectedChapterId, handleSave]);
+  }, [content, selectedChapterId, autoSaveInterval, handleSave]);
 
   const toggleLeft = () => setShowLeft((v) => !v);
   const toggleRight = () => setShowRight((v) => !v);
@@ -284,7 +299,7 @@ export default function Home() {
               chapter={chapter}
               content={content}
               status={status}
-              onChangeContent={setContent}
+              onChangeContent={handleContentChange}
               onSave={handleSave}
               theme={theme}
               colors={colors}

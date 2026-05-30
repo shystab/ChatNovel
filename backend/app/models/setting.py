@@ -19,6 +19,7 @@ class SettingBase(SQLModel):
     openai_api_key_enc: Annotated[str | None, Field(default=None, description="加密的 OpenAI API Key")]
     summary_auto_generate: Annotated[bool, Field(default=True, description="章节保存时自动生成摘要")]  # 章节保存时自动生成摘要
     summary_generation_style: Annotated[str, Field(default="concise", description="摘要生成风格：concise(简洁)/detailed(详细)/extract_first(提取首段)")]  # 摘要生成风格
+    workspace_dir: Annotated[str, Field(default="./workspace", description="小说作品文件夹根目录")]
     # 分层记忆配置
     current_chapter_chars: Annotated[int, Field(default=4000, ge=500, le=8000, description="当前章节注入最大长度（字符数）")]
     nearby_chapter_count: Annotated[int, Field(default=3, ge=1, le=5, description="附近章节数量（前后总计）")]
@@ -54,6 +55,14 @@ class SettingUpdate(SQLModel):
     openai_api_key: Annotated[str | None, Field(default=None, description="OpenAI API Key (输入明文，存储时加密)")]
     summary_auto_generate: Annotated[bool | None, Field(default=None, description="章节保存时自动生成摘要")]
     summary_generation_style: Annotated[str | None, Field(default=None, description="摘要生成风格：concise(简洁)/detailed(详细)/extract_first(提取首段)")]
+    workspace_dir: Annotated[str | None, Field(default=None, description="小说作品文件夹根目录")]
+    current_chapter_chars: Annotated[int | None, Field(default=None, ge=500, le=8000, description="当前章节注入最大长度（字符数）")]
+    nearby_chapter_count: Annotated[int | None, Field(default=None, ge=1, le=5, description="附近章节数量（前后总计）")]
+    inject_nearby_summaries: Annotated[bool | None, Field(default=None, description="是否注入附近章节摘要")]
+    inject_chapter_rag: Annotated[bool | None, Field(default=None, description="是否注入全书检索结果")]
+    suggest_use_external_rag: Annotated[bool | None, Field(default=None, description="续写时默认使用外部知识库")]
+    chat_use_chapter_rag: Annotated[bool | None, Field(default=None, description="对话中自动检索全书")]
+    external_rag_weight: Annotated[int | None, Field(default=None, ge=0, le=100, description="外部知识库权重（0-100）")]
 
 
 class SettingResponse(SettingBase):

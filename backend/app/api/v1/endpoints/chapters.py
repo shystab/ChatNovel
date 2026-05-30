@@ -13,7 +13,7 @@ from app.crud.crud import get_chapter, get_chapters, get_chapters_by_ids, create
 from app.services.ai_service import get_ai_service
 from app.crud.settings_crud import get_settings
 from app.services.knowledge_service import get_knowledge_service, _chunk_text
-from app.services.workspace_service import build_docx_export, build_txt_export, write_chapter_file
+from app.services.workspace_service import build_docx_export, build_txt_export, delete_chapter_files, write_chapter_file
 
 
 async def generate_chapter_summary_background(
@@ -289,6 +289,7 @@ def delete_chapter_endpoint(
             print(f"Warning: Failed to delete vectors for chapter {chapter_id}: {e}")
 
     # 执行删除并返回确认信息
+    delete_chapter_files(db_chapter)
     delete_chapter(session, db_chapter)
     return {"detail": f"Chapter {chapter_id} deleted successfully", "chapter_id": chapter_id}
 

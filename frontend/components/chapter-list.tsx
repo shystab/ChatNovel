@@ -180,7 +180,7 @@ function ExportModal({ bookId, chapters, onClose, theme }: ExportModalProps) {
 }
 
 // ── 主组件 ─────────────────────────────────────────────────────────────────────
-export default function ChapterList({ bookId, chapters, onChaptersChange, onChapterSelect, selectedChapterId, theme, colors, onToggleLeft }: ChapterListProps) {
+export default function ChapterList({ bookId, chapters, onChaptersChange, onChapterSelect, selectedChapterId, theme, onToggleLeft }: ChapterListProps) {
   const [loading] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);

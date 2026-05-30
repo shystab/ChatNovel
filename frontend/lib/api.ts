@@ -106,6 +106,8 @@ export const api = {
     }),
   deleteConversation: (id: number) =>
     req<void>(`${BASE}/conversations/${id}`, { method: "DELETE" }),
+  cleanupEmptyConversations: () =>
+    req<{ deleted_count: number; deleted_ids: number[] }>(`${BASE}/conversations/empty`, { method: "DELETE" }),
   updateConversationDocs: (id: number, docIds: number[]) =>
     req<Conversation>(`${BASE}/conversations/${id}/docs`, {
       method: "PUT",
@@ -116,6 +118,13 @@ export const api = {
   // ── Export ────────────────────────────────────
   exportTxt: () => { window.location.href = `${BASE}/chapters/export/txt`; },
   exportDocx: () => { window.location.href = `${BASE}/chapters/export/docx`; },
+
+  // ── Workspace ─────────────────────────────────
+  syncWorkspaceLibrary: () =>
+    req<{ workspace: string; readme: string; manifest: string; book_count: number; chapter_count: number }>(
+      `${BASE}/books/workspace/sync`,
+      { method: "POST" }
+    ),
 
   // ── Settings ──────────────────────────────────
   getSettings: () => req<Settings>(`${BASE}/settings/`),

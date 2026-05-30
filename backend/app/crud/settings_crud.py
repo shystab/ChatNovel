@@ -2,6 +2,7 @@
 设置 CRUD 操作 - 数据库增删改查
 """
 from sqlmodel import Session, select
+from sqlalchemy.exc import OperationalError
 from app.models.setting import Setting, SettingUpdate
 from app.core.security import encrypt_api_key
 
@@ -20,7 +21,13 @@ def get_settings(session: Session) -> Setting | None:
     """
     # 查询数据库中的第一条设置记录
     statement = select(Setting)
-    return session.exec(statement).first()
+    try:
+        return session.exec(statement).first()
+    except OperationalError:
+        from app.db.migration import run_startup_migration
+
+        run_startup_migration(session)
+        return session.exec(statement).first()
 
 
 def update_settings(session: Session, settings_data: SettingUpdate) -> Setting:
@@ -83,6 +90,16 @@ def update_settings(session: Session, settings_data: SettingUpdate) -> Setting:
             max_tokens=update_data.get("max_tokens", 2000),
             deepseek_api_key_enc=update_data.get("deepseek_api_key_enc"),
             openai_api_key_enc=update_data.get("openai_api_key_enc"),
+            summary_auto_generate=update_data.get("summary_auto_generate", True),
+            summary_generation_style=update_data.get("summary_generation_style", "concise"),
+            workspace_dir=update_data.get("workspace_dir", "./workspace"),
+            current_chapter_chars=update_data.get("current_chapter_chars", 4000),
+            nearby_chapter_count=update_data.get("nearby_chapter_count", 3),
+            inject_nearby_summaries=update_data.get("inject_nearby_summaries", True),
+            inject_chapter_rag=update_data.get("inject_chapter_rag", True),
+            suggest_use_external_rag=update_data.get("suggest_use_external_rag", False),
+            chat_use_chapter_rag=update_data.get("chat_use_chapter_rag", True),
+            external_rag_weight=update_data.get("external_rag_weight", 30),
         )
         session.add(db_settings)
         session.commit()

@@ -22,8 +22,14 @@ def list_conversations(
     session: Annotated[Session, Depends(get_session)],
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    include_empty: Annotated[bool, Query(description="是否包含无消息、无文档、默认标题的空对话")] = False,
 ):
-    return conversation_crud.get_conversations(session, skip=skip, limit=limit)
+    return conversation_crud.get_conversations(
+        session,
+        skip=skip,
+        limit=limit,
+        include_empty=include_empty,
+    )
 
 
 @router.post("/", response_model=ConversationRead, status_code=status.HTTP_201_CREATED, summary="创建对话")
@@ -48,6 +54,14 @@ def get_conversation(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conv
+
+
+@router.delete("/empty", summary="清理空对话")
+def delete_empty_conversations(
+    session: Annotated[Session, Depends(get_session)],
+):
+    deleted_ids = conversation_crud.delete_empty_conversations(session)
+    return {"deleted_count": len(deleted_ids), "deleted_ids": deleted_ids}
 
 
 @router.patch("/{conversation_id}", response_model=ConversationRead, summary="更新对话")

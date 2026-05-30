@@ -81,6 +81,7 @@ def _migrate_columns(session: Session) -> None:
     _add_column_if_missing(session, "setting", "openai_api_key_enc", "VARCHAR")
     _add_column_if_missing(session, "setting", "summary_auto_generate", "BOOLEAN DEFAULT 1")
     _add_column_if_missing(session, "setting", "summary_generation_style", "VARCHAR DEFAULT 'concise'")
+    _add_column_if_missing(session, "setting", "workspace_dir", "VARCHAR DEFAULT './workspace'")
     _add_column_if_missing(session, "setting", "current_chapter_chars", "INTEGER DEFAULT 4000")
     _add_column_if_missing(session, "setting", "nearby_chapter_count", "INTEGER DEFAULT 3")
     _add_column_if_missing(session, "setting", "inject_nearby_summaries", "BOOLEAN DEFAULT 1")

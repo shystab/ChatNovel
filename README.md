@@ -125,6 +125,16 @@ npm run dev
 4. **AI辅助** - 从AI聊天面板获取帮助 / Get help from the AI chat panel
 5. **上传参考** - 添加灵感材料 / Add inspiration materials
 
+### 作品文件夹 / Novel Workspace
+- 主数据仍保存在本地 SQLite 数据库中，章节保存时会同步一份纯文本 `.txt` 到作品文件夹。
+- 可以在「设置 -> 保存与文件」里设置作品文件夹，例如 `D:\Novels\VibeWriter`。
+- 点击「同步整个作品库」会把所有书整理到作品文件夹，并在根目录生成：
+  - `README.md`：作品库索引，方便直接浏览。
+  - `library.json`：机器可读的作品库清单。
+  - `001-书名/project.json`：单本书的元数据。
+  - `001-书名/chapters/*.txt`：每章独立纯文本。
+- `backend/workspace/`、数据库文件、备份文件默认不会进入 Git；换电脑时建议备份作品文件夹和数据库。
+
 ### AI工具 / AI Tools
 - `/续写` - 继续当前场景 / Continue the current scene
 - `/改写` - 润色选中的文本 / Polish selected text

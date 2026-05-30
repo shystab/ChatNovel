@@ -42,7 +42,28 @@ interface AIChatProps {
 
 const CONV_ID_KEY = "ai-conversation-id";
 
-export default function AIChat({ onInsertContent, getEditorContent, theme, colors: _colors, onToggleRight, bookId, chapters: _chapters = [], currentChapterId = null }: AIChatProps) {
+function conversationPreview(conv: Conversation) {
+  const last = [...(conv.messages ?? [])].reverse().find(m => m.content?.trim());
+  if (!last) return conv.selected_doc_ids?.length ? "已选择参考文档" : "暂无消息";
+  const prefix = last.role === "user" ? "我：" : "AI：";
+  const content = last.content.replace(/\s+/g, " ").trim();
+  return `${prefix}${content.length > 24 ? content.slice(0, 24) + "…" : content}`;
+}
+
+function conversationMeta(conv: Conversation) {
+  const messageCount = conv.messages?.length ?? 0;
+  const docCount = conv.selected_doc_ids?.length ?? 0;
+  const date = new Date(conv.update_time);
+  const time = Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const parts = [`${messageCount} 条消息`];
+  if (docCount > 0) parts.push(`${docCount} 份参考`);
+  if (time) parts.push(time);
+  return parts.join(" · ");
+}
+
+export default function AIChat({ onInsertContent, getEditorContent, theme, onToggleRight, bookId, currentChapterId = null }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading] = useState(false);
@@ -62,6 +83,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
   const [conversationTitle, setConversationTitle] = useState("新对话");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [showConvDropdown, setShowConvDropdown] = useState(false);
+  const [cleanupStatus, setCleanupStatus] = useState("");
 
   // ── 文档选择 ──────────────────────────────────
   const [showDocSelector, setShowDocSelector] = useState(false);
@@ -86,43 +108,58 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
     } catch {}
   }, [BASE]);
 
+  const resetDraftConversation = useCallback(() => {
+    setMessages([]);
+    convIdRef.current = null;
+    setCurrentConversationId(null);
+    setConversationTitle("新对话");
+    setSelectedDocIds([]);
+    isFirstExchangeRef.current = true;
+    localStorage.removeItem(CONV_ID_KEY);
+    localStorage.removeItem("ai-chat-messages");
+  }, []);
+
+  const ensureConversation = useCallback(async () => {
+    if (convIdRef.current) return convIdRef.current;
+    const conv = await api.createConversation({ title: "新对话", user_id: "default_user" });
+    convIdRef.current = conv.id;
+    setCurrentConversationId(conv.id);
+    setConversationTitle(conv.title || "新对话");
+    localStorage.setItem(CONV_ID_KEY, String(conv.id));
+    setConversations(prev => [conv, ...prev.filter(item => item.id !== conv.id)]);
+    return conv.id;
+  }, []);
+
   // 启动时：从后端恢复对话
   useEffect(() => {
     async function initConversation() {
+      await loadConversations();
+
       // 尝试读取上次的对话 ID
       const storedId = localStorage.getItem(CONV_ID_KEY);
       if (storedId) {
         try {
           const conv = await api.getConversation(parseInt(storedId, 10));
-          if (conv && conv.messages?.length > 0) {
+          if (conv && (conv.messages?.length > 0 || conv.selected_doc_ids?.length > 0 || conv.title !== "新对话")) {
             setMessages(conv.messages as Message[]);
             convIdRef.current = conv.id;
             setCurrentConversationId(conv.id);
             setConversationTitle(conv.title || "新对话");
             setSelectedDocIds(conv.selected_doc_ids ?? []);
-            await loadConversations();
+            isFirstExchangeRef.current = (conv.messages?.length ?? 0) === 0;
             return;
           }
         } catch {
-          // 对话不存在，创建新的
+          // 对话不存在，降级为草稿
         }
       }
-      // 创建新对话
-      try {
-        const conv = await api.createConversation({ title: "新对话", user_id: "default_user" });
-        convIdRef.current = conv.id;
-        setCurrentConversationId(conv.id);
-        setConversationTitle(conv.title || "新对话");
-        localStorage.setItem(CONV_ID_KEY, String(conv.id));
-        await loadConversations();
-      } catch {
-        // 后端不可用时降级到 localStorage
-        const saved = localStorage.getItem("ai-chat-messages");
-        if (saved) { try { setMessages(JSON.parse(saved)); } catch {} }
-      }
+
+      const saved = localStorage.getItem("ai-chat-messages");
+      resetDraftConversation();
+      if (saved) { try { setMessages(JSON.parse(saved)); } catch {} }
     }
     void initConversation();
-  }, [loadConversations]);
+  }, [loadConversations, resetDraftConversation]);
 
   const switchConversation = async (conv: Conversation) => {
     setShowConvDropdown(false);
@@ -142,11 +179,13 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
 
   const renameCurrentConversation = async (newTitle: string) => {
     setIsEditingTitle(false);
-    if (!newTitle.trim() || !convIdRef.current) return;
-    setConversationTitle(newTitle);
+    const title = newTitle.trim();
+    if (!title) return;
+    setConversationTitle(title);
     try {
-      await api.updateConversation(convIdRef.current, { title: newTitle });
-      setConversations(prev => prev.map(c => c.id === convIdRef.current ? { ...c, title: newTitle } : c));
+      const id = await ensureConversation();
+      await api.updateConversation(id, { title });
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c));
     } catch {}
   };
 
@@ -155,6 +194,8 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
     if (convIdRef.current) {
       api.updateConversation(convIdRef.current, {
         messages: msgs.map(m => ({ role: m.role, content: m.content })),
+      }).then(updated => {
+        setConversations(prev => [updated, ...prev.filter(conv => conv.id !== updated.id)]);
       }).catch(() => {
         // 降级到 localStorage
         localStorage.setItem("ai-chat-messages", JSON.stringify(msgs));
@@ -241,8 +282,15 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
     
     if (!trimmed || isStreaming || isLoading) return;
 
+    try {
+      await ensureConversation();
+    } catch {
+      // 后端不可用时仍允许本地临时对话
+    }
+
     const newMessages: Message[] = [...messages, { role: "user", content: trimmed }];
     setMessages(newMessages);
+    persistMessages(newMessages);
     setInput("");
 
     const historyMessages = messages.map(m => ({
@@ -267,18 +315,14 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
   };
 
   const clearMessages = async () => {
-    setMessages([]);
-    localStorage.removeItem("ai-chat-messages");
-    isFirstExchangeRef.current = true;
-    // 创建新对话替换当前
-    try {
-      const conv = await api.createConversation({ title: "新对话", user_id: "default_user" });
-      convIdRef.current = conv.id;
-      setCurrentConversationId(conv.id);
-      setConversationTitle(conv.title || "新对话");
-      localStorage.setItem(CONV_ID_KEY, String(conv.id));
-      await loadConversations();
-    } catch {}
+    const previousId = convIdRef.current;
+    resetDraftConversation();
+    if (previousId) {
+      try {
+        await api.deleteConversation(previousId);
+        setConversations(prev => prev.filter(conv => conv.id !== previousId));
+      } catch {}
+    }
   };
 
   const generateAutoTitle = async (firstUserMsg: string) => {
@@ -301,11 +345,24 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
     try {
       await api.deleteConversation(conv.id);
       setConversations(prev => prev.filter(c => c.id !== conv.id));
-      // 如果删除的是当前对话，创建新对话
       if (conv.id === convIdRef.current) {
-        await clearMessages();
+        resetDraftConversation();
       }
     } catch {}
+  };
+
+  const cleanupEmptyConversations = async () => {
+    setCleanupStatus("清理中...");
+    try {
+      const result = await api.cleanupEmptyConversations();
+      if (currentConversationId && result.deleted_ids.includes(currentConversationId)) {
+        resetDraftConversation();
+      }
+      await loadConversations();
+      setCleanupStatus(result.deleted_count > 0 ? `已清理 ${result.deleted_count} 个空对话` : "没有空对话");
+    } catch {
+      setCleanupStatus("清理失败");
+    }
   };
 
   const busy = isStreaming || isLoading;
@@ -365,7 +422,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
 
           {/* 对话下拉列表 */}
           {showConvDropdown && (
-            <div className={`absolute top-full left-0 mt-1 w-64 ${dropdownBg} border rounded-xl shadow-xl z-[500] overflow-hidden`}>
+            <div className={`absolute top-full left-0 mt-1 w-72 ${dropdownBg} border rounded-xl shadow-xl z-[500] overflow-hidden`}>
               <div className={`px-3 py-2 border-b ${borderClass} flex items-center justify-between`}>
                 <span className={`text-[9px] font-bold ${mutedClass} uppercase tracking-widest`}>对话列表</span>
                 <button
@@ -388,7 +445,8 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
                       type="button"
                     >
                       <div className={`text-xs font-semibold truncate ${headingClass}`}>{conv.title || "新对话"}</div>
-                      <div className={`text-[9px] ${mutedClass} mt-0.5`}>{new Date(conv.update_time).toLocaleDateString("zh-CN")}</div>
+                      <div className={`text-[10px] ${mutedClass} mt-0.5 truncate`}>{conversationPreview(conv)}</div>
+                      <div className={`text-[9px] ${mutedClass} mt-0.5`}>{conversationMeta(conv)}</div>
                     </button>
                     <button
                       onClick={(e) => deleteConversation(conv, e)}
@@ -401,7 +459,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
                   </div>
                 ))}
               </div>
-              <div className={`px-3 py-2 border-t ${borderClass}`}>
+              <div className={`px-3 py-2 border-t ${borderClass} space-y-1.5`}>
                 <button
                   onClick={() => {
                     const firstUser = messages.find(m => m.role === "user");
@@ -414,6 +472,16 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
                 >
                   ✦ AI 自动生成名称
                 </button>
+                <button
+                  onClick={cleanupEmptyConversations}
+                  className={`w-full text-[10px] ${mutedClass} hover:${mutedClass} py-1 transition-colors`}
+                  type="button"
+                >
+                  清理空对话
+                </button>
+                {cleanupStatus && (
+                  <p className={`text-[9px] ${mutedClass} text-center`}>{cleanupStatus}</p>
+                )}
               </div>
             </div>
           )}
@@ -467,7 +535,12 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, color
 
           {/* 知识库文档选择 */}
           <button
-            onClick={() => setShowDocSelector(true)}
+            onClick={async () => {
+              try {
+                await ensureConversation();
+                setShowDocSelector(true);
+              } catch {}
+            }}
             className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg flex items-center space-x-0.5`}
             title="选择参考文档"
             type="button"

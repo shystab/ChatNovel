@@ -21,6 +21,7 @@ import {
   Trash2,
   FileText,
   Loader2,
+  Archive,
 } from "lucide-react";
 import PersonaManager from "@/components/persona-manager";
 import { useTheme } from "@/hooks/use-theme";
@@ -42,6 +43,10 @@ export default function SettingsPage() {
   const [workspaceDir, setWorkspaceDir] = useState("./workspace");
   const [workspaceSyncStatus, setWorkspaceSyncStatus] = useState("");
   const [workspaceSyncing, setWorkspaceSyncing] = useState(false);
+  const [backupStatus, setBackupStatus] = useState("");
+  const [backuping, setBackuping] = useState(false);
+  const [workspaceImportStatus, setWorkspaceImportStatus] = useState("");
+  const [workspaceImporting, setWorkspaceImporting] = useState(false);
 
   // 分层记忆和RAG设置
   const [currentChapterChars, setCurrentChapterChars] = useState(4000);
@@ -173,6 +178,62 @@ export default function SettingsPage() {
       setWorkspaceSyncStatus("作品库同步失败");
     } finally {
       setWorkspaceSyncing(false);
+    }
+  };
+
+  const handleWorkspaceBackup = async () => {
+    setBackuping(true);
+    setBackupStatus("正在生成备份...");
+    try {
+      const saved = await handleSave();
+      if (!saved) {
+        setBackupStatus("设置保存失败，未生成备份");
+        return;
+      }
+      const filename = await api.backupWorkspaceLibrary();
+      setBackupStatus(`已下载 ${filename}`);
+    } catch {
+      setBackupStatus("备份失败");
+    } finally {
+      setBackuping(false);
+    }
+  };
+
+  const handleWorkspaceScan = async () => {
+    setWorkspaceImporting(true);
+    setWorkspaceImportStatus("正在扫描作品文件夹...");
+    try {
+      const saved = await handleSave();
+      if (!saved) {
+        setWorkspaceImportStatus("设置保存失败，未扫描作品文件夹");
+        return;
+      }
+      const result = await api.scanWorkspaceLibrary();
+      setWorkspaceImportStatus(`发现 ${result.book_count} 本书、${result.chapter_count} 章、${result.char_count} 字符`);
+    } catch {
+      setWorkspaceImportStatus("扫描失败");
+    } finally {
+      setWorkspaceImporting(false);
+    }
+  };
+
+  const handleWorkspaceImport = async () => {
+    setWorkspaceImporting(true);
+    setWorkspaceImportStatus("正在从作品文件夹导入...");
+    try {
+      const saved = await handleSave();
+      if (!saved) {
+        setWorkspaceImportStatus("设置保存失败，未导入");
+        return;
+      }
+      const result = await api.importWorkspaceLibrary();
+      setWorkspaceImportStatus(
+        `导入完成：新增 ${result.created_books} 本书/${result.created_chapters} 章，更新 ${result.updated_books} 本书/${result.updated_chapters} 章`
+      );
+    } catch {
+      setWorkspaceImportStatus("导入失败");
+    } finally {
+      setWorkspaceImporting(false);
     }
   };
 
@@ -397,43 +458,88 @@ export default function SettingsPage() {
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
                       <h2 className={`text-lg font-bold ${headingTxt}`}>保存与文件</h2>
                     </div>
-                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-5`}>
-                      <div>
-                        <label className={`text-sm font-bold ${headingTxt}`}>自动保存间隔（秒）</label>
-                        <p className={`text-xs ${mutedTxt} mt-0.5 mb-3`}>编辑器停止输入后多少秒自动保存，设为 0 则禁用自动保存</p>
-                        <input
-                          type="number"
-                          min={0}
-                          max={300}
-                          value={autoSaveInterval}
-                          onChange={(e) => setAutoSaveInterval(parseInt(e.target.value) || 0)}
-                          className={`w-40 border-2 rounded-2xl px-6 py-4 text-sm focus:ring-4 outline-none transition-all ${inputCls}`}
-                        />
-                      </div>
-                      <div>
-                        <label className={`text-sm font-bold ${headingTxt}`}>作品文件夹</label>
-                        <p className={`text-xs ${mutedTxt} mt-0.5 mb-3`}>章节 TXT、项目清单和导出文件默认同步到这里；可以填 D 盘或移动硬盘路径。</p>
-                        <input
-                          type="text"
-                          value={workspaceDir}
-                          onChange={(e) => setWorkspaceDir(e.target.value)}
-                          placeholder="D:\\Novels\\VibeWriter"
-                          className={`w-full border-2 rounded-2xl px-6 py-4 text-sm focus:ring-4 outline-none transition-all font-mono ${inputCls}`}
-                        />
-                        <div className="flex items-center gap-3 mt-3">
-                          <button
-                            type="button"
-                            onClick={handleWorkspaceSync}
-                            disabled={workspaceSyncing}
-                            className={`px-5 py-2.5 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
-                          >
-                            {workspaceSyncing ? "同步中..." : "同步整个作品库"}
-                          </button>
-                          {workspaceSyncStatus && (
-                            <span className={`text-[10px] ${mutedTxt} truncate`}>{workspaceSyncStatus}</span>
-                          )}
+                    <div className={`p-8 rounded-3xl shadow-sm border ${cardBg} space-y-6`}>
+                      <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-6">
+                        <div>
+                          <label className={`text-sm font-bold ${headingTxt}`}>自动保存</label>
+                          <p className={`text-xs ${mutedTxt} mt-1 mb-4`}>停止输入后保存；0 为关闭。</p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              max={300}
+                              value={autoSaveInterval}
+                              onChange={(e) => setAutoSaveInterval(parseInt(e.target.value) || 0)}
+                              className={`w-24 border-2 rounded-2xl px-4 py-3 text-sm focus:ring-4 outline-none transition-all ${inputCls}`}
+                            />
+                            <span className={`text-xs ${mutedTxt}`}>秒</span>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <label className={`text-sm font-bold ${headingTxt}`}>作品文件夹</label>
+                              <p className={`text-xs ${mutedTxt} mt-1`}>章节 TXT、作品索引和备份都围绕这个目录工作。</p>
+                            </div>
+                            <Database size={18} className={mutedTxt} />
+                          </div>
+                          <input
+                            type="text"
+                            value={workspaceDir}
+                            onChange={(e) => setWorkspaceDir(e.target.value)}
+                            placeholder="D:\\Novels\\VibeWriter"
+                            className={`w-full border-2 rounded-2xl px-5 py-3 mt-4 text-sm focus:ring-4 outline-none transition-all font-mono ${inputCls}`}
+                          />
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button
+                          type="button"
+                          onClick={handleWorkspaceSync}
+                          disabled={workspaceSyncing}
+                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                        >
+                          <FileText size={15} />
+                          {workspaceSyncing ? "同步中..." : "同步整个作品库"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleWorkspaceBackup}
+                          disabled={backuping}
+                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                        >
+                          <Archive size={15} />
+                          {backuping ? "备份中..." : "下载备份 ZIP"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleWorkspaceScan}
+                          disabled={workspaceImporting}
+                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                        >
+                          <Database size={15} />
+                          {workspaceImporting ? "处理中..." : "扫描作品文件夹"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleWorkspaceImport}
+                          disabled={workspaceImporting}
+                          className={`flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold transition-all disabled:opacity-50 ${primaryBtn}`}
+                        >
+                          <Upload size={15} />
+                          {workspaceImporting ? "处理中..." : "从文件夹导入"}
+                        </button>
+                      </div>
+
+                      {(workspaceSyncStatus || backupStatus || workspaceImportStatus) && (
+                        <div className={`text-[11px] ${mutedTxt} space-y-1`}>
+                          {workspaceSyncStatus && <p>{workspaceSyncStatus}</p>}
+                          {backupStatus && <p>{backupStatus}</p>}
+                          {workspaceImportStatus && <p>{workspaceImportStatus}</p>}
+                        </div>
+                      )}
                     </div>
                   </section>
 

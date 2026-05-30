@@ -3,11 +3,13 @@ from __future__ import annotations
 import io
 import json
 import re
+import zipfile
 from datetime import datetime
+from html import escape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -21,6 +23,7 @@ from app.models.setting import Setting
 
 
 INVALID_FILENAME_CHARS = r'<>:"/\|?*'
+CHAPTER_FILENAME_RE = re.compile(r"^(?P<order>\d+)-(?P<id>\d+)-(?P<title>.+)\.txt$")
 
 
 class _PlainTextHTMLParser(HTMLParser):
@@ -71,6 +74,13 @@ def normalize_novel_text(content: str) -> str:
     text = html_to_plain_text(content)
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\n", text) if p.strip()]
     return "\n\n".join(paragraphs)
+
+
+def plain_text_to_html(content: str) -> str:
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n|\n", content) if p.strip()]
+    if not paragraphs:
+        return ""
+    return "".join(f"<p>{escape(paragraph)}</p>" for paragraph in paragraphs)
 
 
 def safe_filename(value: str, fallback: str = "untitled") -> str:
@@ -193,6 +203,100 @@ def write_library_index(items: Iterable[tuple[Book, list[Chapter]]]) -> dict:
     }
 
 
+def scan_library_workspace() -> dict:
+    root = workspace_root()
+    books: list[dict] = []
+
+    for folder in sorted(path for path in root.iterdir() if path.is_dir()):
+        if folder.name.startswith("."):
+            continue
+
+        manifest_path = folder / "project.json"
+        manifest: dict = {}
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                manifest = {}
+
+        title = manifest.get("title") or re.sub(r"^\d+-", "", folder.name)
+        chapters: list[dict] = []
+        chapters_dir = folder / "chapters"
+        if chapters_dir.exists():
+            for index, path in enumerate(sorted(chapters_dir.glob("*.txt")), start=1):
+                match = CHAPTER_FILENAME_RE.match(path.name)
+                order = int(match.group("order")) if match else index
+                chapter_id = int(match.group("id")) if match else None
+                chapter_title = match.group("title") if match else path.stem
+                text = path.read_text(encoding="utf-8")
+                chapters.append({
+                    "id": chapter_id,
+                    "title": chapter_title,
+                    "order": order,
+                    "path": str(path),
+                    "char_count": len(text.strip()),
+                })
+
+        books.append({
+            "id": manifest.get("id"),
+            "title": title,
+            "description": manifest.get("description"),
+            "user_id": manifest.get("user_id") or "default_user",
+            "folder": str(folder),
+            "chapter_count": len(chapters),
+            "char_count": sum(chapter["char_count"] for chapter in chapters),
+            "chapters": chapters,
+        })
+
+    return {
+        "workspace": str(root),
+        "book_count": len(books),
+        "chapter_count": sum(book["chapter_count"] for book in books),
+        "char_count": sum(book["char_count"] for book in books),
+        "books": books,
+    }
+
+
+def read_workspace_book(folder: str) -> dict:
+    root = workspace_root().resolve()
+    book_folder_path = Path(folder).resolve()
+    if root not in book_folder_path.parents and book_folder_path != root:
+        raise ValueError("Book folder must be inside workspace")
+
+    manifest_path = book_folder_path / "project.json"
+    manifest: dict = {}
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            manifest = {}
+
+    title = manifest.get("title") or re.sub(r"^\d+-", "", book_folder_path.name)
+    chapters: list[dict] = []
+    chapters_dir = book_folder_path / "chapters"
+    if chapters_dir.exists():
+        for index, path in enumerate(sorted(chapters_dir.glob("*.txt")), start=1):
+            match = CHAPTER_FILENAME_RE.match(path.name)
+            order = int(match.group("order")) if match else index
+            chapter_id = int(match.group("id")) if match else None
+            chapter_title = match.group("title") if match else path.stem
+            text = path.read_text(encoding="utf-8")
+            chapters.append({
+                "id": chapter_id,
+                "title": chapter_title,
+                "order": order,
+                "content": plain_text_to_html(text),
+            })
+
+    return {
+        "id": manifest.get("id"),
+        "title": title,
+        "description": manifest.get("description"),
+        "user_id": manifest.get("user_id") or "default_user",
+        "chapters": chapters,
+    }
+
+
 def chapter_file_path(chapter: Chapter, book: Book | None = None) -> Path:
     folder = book_folder(book, chapter.book_id)
     order = chapter.order or chapter.id or 0
@@ -289,3 +393,51 @@ def sync_library_workspace(items: Iterable[tuple[Book, list[Chapter]]]) -> dict:
         **index,
         "synced_books": synced_books,
     }
+
+
+def _sqlite_database_path(database_url: str) -> Path | None:
+    if not database_url.startswith("sqlite"):
+        return None
+    if database_url == "sqlite:///:memory:":
+        return None
+
+    if database_url.startswith("sqlite:////"):
+        raw_path = "/" + database_url.removeprefix("sqlite:////")
+    elif database_url.startswith("sqlite:///"):
+        raw_path = database_url.removeprefix("sqlite:///")
+    else:
+        return None
+
+    path = Path(unquote(raw_path))
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path if path.exists() else None
+
+
+def build_workspace_backup(database_url: str | None = None) -> tuple[str, io.BytesIO]:
+    root = workspace_root()
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"VibeWriter-backup-{timestamp}.zip"
+    database_path = _sqlite_database_path(database_url or settings.DATABASE_URL)
+
+    metadata = {
+        "app": "VibeWriter",
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "workspace": str(root),
+        "database": str(database_path) if database_path else None,
+    }
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("backup.json", json.dumps(metadata, ensure_ascii=False, indent=2))
+
+        if database_path:
+            archive.write(database_path, f"database/{database_path.name}")
+
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            archive.write(path, f"workspace/{path.relative_to(root).as_posix()}")
+
+    output.seek(0)
+    return filename, output

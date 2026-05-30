@@ -11,14 +11,17 @@ from typing import Annotated, List
 from app.db.session import get_session
 from app.crud import book_crud
 from app.crud.crud import get_chapters_by_book, get_chapter, create_chapter, update_chapter, delete_chapter
-from app.models.books import BookCreate, BookRead, BookUpdate
+from app.models.books import Book, BookCreate, BookRead, BookUpdate
 from app.models.chapters import ChapterCreate, ChapterRead, ChapterUpdate, Chapter
 from app.services.workspace_service import (
     build_docx_export,
     build_txt_export,
+    build_workspace_backup,
     content_disposition,
     delete_chapter_files,
+    read_workspace_book,
     safe_filename,
+    scan_library_workspace,
     sync_book_workspace,
     sync_library_workspace,
     write_chapter_file,
@@ -79,6 +82,90 @@ def _export_chapters_for_book(session: Session, book_id: int, ids: str | None) -
 
 def _attachment_filename(book, suffix: str) -> str:
     return f"{safe_filename(book.title, 'novel')}.{suffix}"
+
+
+def _library_items(session: Session) -> list[tuple]:
+    books = book_crud.get_books(session, limit=1000)
+    return [
+        (book, get_chapters_by_book(session, book.id, limit=5000))
+        for book in books
+        if book.id is not None
+    ]
+
+
+def _find_import_book(session: Session, title: str):
+    return session.exec(select(Book).where(Book.title == title)).first()
+
+
+def _find_import_chapter(session: Session, book_id: int, chapter_data: dict) -> Chapter | None:
+    chapter_id = chapter_data.get("id")
+    if chapter_id:
+        chapter = get_chapter(session, chapter_id)
+        if chapter and chapter.book_id == book_id:
+            return chapter
+
+    return session.exec(
+        select(Chapter)
+        .where(Chapter.book_id == book_id)
+        .where(Chapter.order == chapter_data["order"])
+    ).first()
+
+
+def _import_workspace_library(session: Session) -> dict:
+    scan = scan_library_workspace()
+    created_books = 0
+    updated_books = 0
+    created_chapters = 0
+    updated_chapters = 0
+
+    for scanned_book in scan["books"]:
+        data = read_workspace_book(scanned_book["folder"])
+        book = _find_import_book(session, data["title"])
+        if book:
+            book.title = data["title"]
+            book.description = data.get("description")
+            book.user_id = data.get("user_id") or book.user_id
+            updated_books += 1
+        else:
+            book = book_crud.create_book(session, BookCreate(
+                title=data["title"],
+                description=data.get("description"),
+                user_id=data.get("user_id") or "default_user",
+            ))
+            created_books += 1
+
+        session.add(book)
+        session.commit()
+        session.refresh(book)
+
+        for chapter_data in data["chapters"]:
+            chapter = _find_import_chapter(session, book.id, chapter_data)
+            if chapter:
+                chapter = update_chapter(session, chapter, ChapterUpdate(
+                    title=chapter_data["title"],
+                    content=chapter_data["content"],
+                    order=chapter_data["order"],
+                ))
+                updated_chapters += 1
+            else:
+                chapter = create_chapter(session, ChapterCreate(
+                    title=chapter_data["title"],
+                    content=chapter_data["content"],
+                    order=chapter_data["order"],
+                    book_id=book.id,
+                ))
+                created_chapters += 1
+            write_chapter_file(chapter, book)
+
+    return {
+        "workspace": scan["workspace"],
+        "book_count": scan["book_count"],
+        "chapter_count": scan["chapter_count"],
+        "created_books": created_books,
+        "updated_books": updated_books,
+        "created_chapters": created_chapters,
+        "updated_chapters": updated_chapters,
+    }
 
 
 # ── Book CRUD ──────────────────────────────────────────────────────────────────
@@ -152,13 +239,34 @@ def delete_book(
 def sync_library_to_workspace(
     session: Annotated[Session, Depends(get_session)],
 ):
-    books = book_crud.get_books(session, limit=1000)
-    items = [
-        (book, get_chapters_by_book(session, book.id, limit=5000))
-        for book in books
-        if book.id is not None
-    ]
-    return sync_library_workspace(items)
+    return sync_library_workspace(_library_items(session))
+
+
+@router.post("/workspace/backup", summary="备份数据库和作品文件夹")
+def backup_workspace(
+    session: Annotated[Session, Depends(get_session)],
+):
+    sync_library_workspace(_library_items(session))
+    filename, output = build_workspace_backup()
+    return StreamingResponse(
+        output,
+        media_type="application/zip",
+        headers={"Content-Disposition": content_disposition(filename)},
+    )
+
+
+@router.get("/workspace/scan", summary="扫描作品文件夹")
+def scan_workspace():
+    return scan_library_workspace()
+
+
+@router.post("/workspace/import", summary="从作品文件夹导入到数据库")
+def import_workspace(
+    session: Annotated[Session, Depends(get_session)],
+):
+    result = _import_workspace_library(session)
+    sync_library_workspace(_library_items(session))
+    return result
 
 
 # ── Chapter Sub-Resource ───────────────────────────────────────────────────────

@@ -32,6 +32,14 @@ async function req<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+function filenameFromDisposition(value: string | null, fallback: string) {
+  if (!value) return fallback;
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/);
+  if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1]);
+  const asciiMatch = value.match(/filename="?([^";]+)"?/);
+  return asciiMatch?.[1] || fallback;
+}
+
 export const api = {
   // ── Books ──────────────────────────────────────
   listBooks: () => req<Book[]>(`${BASE}/books/`),
@@ -125,6 +133,41 @@ export const api = {
       `${BASE}/books/workspace/sync`,
       { method: "POST" }
     ),
+  scanWorkspaceLibrary: () =>
+    req<{ workspace: string; book_count: number; chapter_count: number; char_count: number }>(
+      `${BASE}/books/workspace/scan`
+    ),
+  importWorkspaceLibrary: () =>
+    req<{
+      workspace: string;
+      book_count: number;
+      chapter_count: number;
+      created_books: number;
+      updated_books: number;
+      created_chapters: number;
+      updated_chapters: number;
+    }>(`${BASE}/books/workspace/import`, { method: "POST" }),
+  backupWorkspaceLibrary: async () => {
+    const res = await fetch(`${BASE}/books/workspace/backup`, { method: "POST" });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const filename = filenameFromDisposition(
+      res.headers.get("Content-Disposition"),
+      `VibeWriter-backup-${new Date().toISOString().slice(0, 10)}.zip`
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    return filename;
+  },
 
   // ── Settings ──────────────────────────────────
   getSettings: () => req<Settings>(`${BASE}/settings/`),

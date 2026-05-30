@@ -63,6 +63,7 @@ next-env.d.ts
 
 # Database files
 *.db
+*.db.bak-*
 *.sqlite
 *.sqlite3
 backend/*.db

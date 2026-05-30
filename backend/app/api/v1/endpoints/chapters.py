@@ -6,9 +6,6 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from typing import Annotated, List
 import io
-import docx
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt
 
 from app.db.session import get_session
 from app.models.chapters import ChapterCreate, ChapterUpdate, ChapterRead
@@ -16,7 +13,7 @@ from app.crud.crud import get_chapter, get_chapters, get_chapters_by_ids, create
 from app.services.ai_service import get_ai_service
 from app.crud.settings_crud import get_settings
 from app.services.knowledge_service import get_knowledge_service, _chunk_text
-from app.services.workspace_service import build_txt_export, normalize_novel_text, write_chapter_file
+from app.services.workspace_service import build_docx_export, build_txt_export, write_chapter_file
 
 
 async def generate_chapter_summary_background(
@@ -153,30 +150,8 @@ def export_docx(
     if not chapters:
         raise HTTPException(status_code=404, detail="No chapters found")
     
-    doc = docx.Document()
-    styles = doc.styles
-    styles["Normal"].font.name = "宋体"
-    styles["Normal"].font.size = Pt(12)
-    styles["Normal"].paragraph_format.line_spacing = 1.75
-    doc.add_heading("小说全集", 0)
-    
-    for chapter in chapters:
-        heading = doc.add_heading(chapter.title, level=1)
-        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for paragraph_text in normalize_novel_text(chapter.content).split("\n\n"):
-            if not paragraph_text.strip():
-                continue
-            paragraph = doc.add_paragraph(paragraph_text.strip())
-            paragraph.paragraph_format.first_line_indent = Pt(24)
-            paragraph.paragraph_format.line_spacing = 1.75
-        doc.add_page_break()
-    
-    output = io.BytesIO()
-    doc.save(output)
-    output.seek(0)
-    
     return StreamingResponse(
-        output,
+        build_docx_export(chapters),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": "attachment; filename=novel.docx"}
     )

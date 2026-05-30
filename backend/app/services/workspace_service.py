@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import io
 import json
 import re
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import quote
+
+import docx
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Pt
 
 from app.core.config import settings
 from app.models.books import Book
@@ -73,6 +79,15 @@ def safe_filename(value: str, fallback: str = "untitled") -> str:
     return cleaned[:80] or fallback
 
 
+def content_disposition(filename: str) -> str:
+    ascii_filename = filename.encode("ascii", "ignore").decode().strip() or "download"
+    if ascii_filename.startswith("."):
+        ascii_filename = f"download{ascii_filename}"
+    ascii_filename = ascii_filename.replace("\\", "_").replace('"', "_")
+    quoted_filename = quote(filename)
+    return f"attachment; filename=\"{ascii_filename}\"; filename*=UTF-8''{quoted_filename}"
+
+
 def workspace_root() -> Path:
     root = Path(settings.NOVEL_WORKSPACE_DIR).expanduser()
     if not root.is_absolute():
@@ -134,3 +149,45 @@ def build_txt_export(chapters: Iterable[Chapter], title: str = "小说全集") -
             sections.append(body)
             sections.append("")
     return "\n".join(sections).rstrip() + "\n"
+
+
+def build_docx_export(chapters: Iterable[Chapter], title: str = "小说全集") -> io.BytesIO:
+    chapter_list = list(chapters)
+    doc = docx.Document()
+    styles = doc.styles
+    styles["Normal"].font.name = "宋体"
+    styles["Normal"].font.size = Pt(12)
+    styles["Normal"].paragraph_format.line_spacing = 1.75
+
+    title_paragraph = doc.add_heading(title.strip() or "小说全集", 0)
+    title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    for index, chapter in enumerate(chapter_list):
+        heading = doc.add_heading(chapter.title, level=1)
+        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        body = normalize_novel_text(chapter.content)
+        for paragraph_text in body.split("\n\n"):
+            if not paragraph_text.strip():
+                continue
+            paragraph = doc.add_paragraph(paragraph_text.strip())
+            paragraph.paragraph_format.first_line_indent = Pt(24)
+            paragraph.paragraph_format.line_spacing = 1.75
+        if index != len(chapter_list) - 1:
+            doc.add_page_break()
+
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+    return output
+
+
+def sync_book_workspace(book: Book, chapters: Iterable[Chapter]) -> dict:
+    folder = book_folder(book)
+    manifest_path = write_project_manifest(book)
+    written = [write_chapter_file(chapter, book) for chapter in chapters]
+    return {
+        "workspace": str(folder),
+        "manifest": str(manifest_path),
+        "chapter_count": len(written),
+        "chapters": [str(path) for path in written],
+    }

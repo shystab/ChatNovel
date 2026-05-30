@@ -19,19 +19,25 @@ interface ChapterListProps {
 
 // ── 导出弹窗 ──────────────────────────────────────────────────────────────────
 interface ExportModalProps {
+  bookId: number | null;
   chapters: Chapter[];
   onClose: () => void;
   theme: Theme;
 }
 
-function ExportModal({ chapters, onClose, theme }: ExportModalProps) {
+function ExportModal({ bookId, chapters, onClose, theme }: ExportModalProps) {
   const [selected, setSelected] = useState<Set<number>>(new Set(chapters.map(c => c.id)));
   const [fmt, setFmt] = useState<"txt" | "docx">("txt");
+  const [syncStatus, setSyncStatus] = useState("");
 
   const toggle = (id: number) => {
     setSelected(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   };
@@ -44,8 +50,23 @@ function ExportModal({ chapters, onClose, theme }: ExportModalProps) {
     const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     const ids = Array.from(selected).join(",");
     if (!ids) return;
-    window.location.href = `${BASE}/chapters/export/${fmt}?ids=${ids}`;
+    const path = bookId ? `books/${bookId}/export/${fmt}` : `chapters/export/${fmt}`;
+    window.location.href = `${BASE}/${path}?ids=${ids}`;
     onClose();
+  };
+
+  const handleSyncWorkspace = async () => {
+    if (!bookId) return;
+    const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    setSyncStatus("同步中...");
+    try {
+      const res = await fetch(`${BASE}/books/${bookId}/workspace/sync`, { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setSyncStatus(`已同步 ${data.chapter_count ?? 0} 章到作品文件夹`);
+    } catch {
+      setSyncStatus("同步失败");
+    }
   };
 
   const bg = theme === 'dark' ? 'bg-slate-900' : theme === 'sepia' ? 'bg-amber-50' : 'bg-white';
@@ -125,8 +146,19 @@ function ExportModal({ chapters, onClose, theme }: ExportModalProps) {
 
         {/* 底部操作 */}
         <div className={`px-6 py-4 border-t ${border} flex items-center justify-between shrink-0`}>
-          <span className={`text-[10px] ${muted}`}>已选 {selected.size} / {chapters.length} 章</span>
+          <span className={`text-[10px] ${muted}`}>
+            {syncStatus || `已选 ${selected.size} / ${chapters.length} 章`}
+          </span>
           <div className="flex items-center space-x-2">
+            {bookId && (
+              <button
+                onClick={handleSyncWorkspace}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${btnInactive}`}
+                type="button"
+              >
+                同步文件夹
+              </button>
+            )}
             <button
               onClick={onClose}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${btnInactive}`}
@@ -364,6 +396,7 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
 
       {isExportOpen && (
         <ExportModal
+          bookId={bookId}
           chapters={chapters}
           onClose={() => setIsExportOpen(false)}
           theme={theme}

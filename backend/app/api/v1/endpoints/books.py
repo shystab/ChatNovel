@@ -1,7 +1,10 @@
 """
 书籍 API 接口（含章节子路由）
 """
+import io
+
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select, func
 from typing import Annotated, List
 
@@ -10,7 +13,15 @@ from app.crud import book_crud
 from app.crud.crud import get_chapters_by_book, get_chapter, create_chapter, update_chapter, delete_chapter
 from app.models.books import BookCreate, BookRead, BookUpdate
 from app.models.chapters import ChapterCreate, ChapterRead, ChapterUpdate, Chapter
-from app.services.workspace_service import write_chapter_file, write_project_manifest
+from app.services.workspace_service import (
+    build_docx_export,
+    build_txt_export,
+    content_disposition,
+    safe_filename,
+    sync_book_workspace,
+    write_chapter_file,
+    write_project_manifest,
+)
 
 
 router = APIRouter(responses={404: {"description": "Not found"}})
@@ -37,6 +48,35 @@ def _build_book_read(book, session: Session) -> BookRead:
         update_time=book.update_time,
         chapter_count=count,
     )
+
+
+def _parse_chapter_ids(ids: str | None) -> list[int] | None:
+    if not ids:
+        return None
+    try:
+        parsed = [int(item.strip()) for item in ids.split(",") if item.strip()]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="ids must be comma-separated integers") from exc
+    if not parsed:
+        raise HTTPException(status_code=422, detail="ids cannot be empty")
+    return parsed
+
+
+def _export_chapters_for_book(session: Session, book_id: int, ids: str | None) -> list[Chapter]:
+    chapters = get_chapters_by_book(session, book_id, limit=5000)
+    chapter_ids = _parse_chapter_ids(ids)
+    if chapter_ids is None:
+        return chapters
+
+    by_id = {chapter.id: chapter for chapter in chapters}
+    missing = [chapter_id for chapter_id in chapter_ids if chapter_id not in by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Chapter(s) not found in book: {missing}")
+    return [by_id[chapter_id] for chapter_id in chapter_ids]
+
+
+def _attachment_filename(book, suffix: str) -> str:
+    return f"{safe_filename(book.title, 'novel')}.{suffix}"
 
 
 # ── Book CRUD ──────────────────────────────────────────────────────────────────
@@ -107,6 +147,59 @@ def delete_book(
 
 
 # ── Chapter Sub-Resource ───────────────────────────────────────────────────────
+
+@router.get("/{book_id}/export/txt", summary="导出当前书籍为 TXT")
+def export_book_txt(
+    book_id: Annotated[int, Path(ge=1)],
+    session: Annotated[Session, Depends(get_session)],
+    ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
+):
+    book = book_crud.get_book(session, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    chapters = _export_chapters_for_book(session, book_id, ids)
+    if not chapters:
+        raise HTTPException(status_code=404, detail="No chapters found")
+
+    content = build_txt_export(chapters, title=book.title)
+    return StreamingResponse(
+        io.BytesIO(content.encode("utf-8")),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": content_disposition(_attachment_filename(book, "txt"))},
+    )
+
+
+@router.get("/{book_id}/export/docx", summary="导出当前书籍为 DOCX")
+def export_book_docx(
+    book_id: Annotated[int, Path(ge=1)],
+    session: Annotated[Session, Depends(get_session)],
+    ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
+):
+    book = book_crud.get_book(session, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    chapters = _export_chapters_for_book(session, book_id, ids)
+    if not chapters:
+        raise HTTPException(status_code=404, detail="No chapters found")
+
+    return StreamingResponse(
+        build_docx_export(chapters, title=book.title),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": content_disposition(_attachment_filename(book, "docx"))},
+    )
+
+
+@router.post("/{book_id}/workspace/sync", summary="同步当前书籍到作品文件夹")
+def sync_book_to_workspace(
+    book_id: Annotated[int, Path(ge=1)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    book = book_crud.get_book(session, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    chapters = get_chapters_by_book(session, book_id, limit=5000)
+    return sync_book_workspace(book, chapters)
+
 
 @router.get(
     "/{book_id}/chapters",

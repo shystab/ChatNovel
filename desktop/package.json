@@ -1,0 +1,35 @@
+{
+  "name": "novel-ide-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron shell for Novel IDE",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "pack:shell": "electron-builder --dir",
+    "dist:shell": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.shysta.novelide",
+    "productName": "Novel IDE",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

@@ -53,6 +53,11 @@ build/
 *.tsbuildinfo
 next-env.d.ts
 
+# Electron desktop packaging
+desktop/dist/
+desktop/out/
+desktop/release/
+
 # IDE
 .vscode/
 .idea/

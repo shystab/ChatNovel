@@ -32,7 +32,7 @@ app = FastAPI(
 # 添加 CORS 中间件，允许跨域请求
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=app_settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,7 +105,8 @@ app.include_router(
 @app.get("/")
 def root():
     return {
-        "message": "Welcome to FastAPI Exercise",
+        "message": "Welcome to Novel IDE Backend",
         "docs": "/docs",
-        "redoc": "/redoc"
+        "redoc": "/redoc",
+        "api": app_settings.API_V1_STR,
     }

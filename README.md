@@ -20,7 +20,7 @@
 - **情节建议** - 生成情节想法和发展 / Generate plot ideas and developments
 
 ### 📚 RAG知识库 / RAG-Powered Knowledge Base
-- 上传参考文档 (TXT/PDF/DOCX) / Upload reference documents (TXT/PDF/DOCX)
+- 上传纯文本参考文档 (TXT/MD 等) / Upload plain-text reference documents (TXT/MD, etc.)
 - 自动文本分块和向量化 / Automatic text chunking and vectorization
 - 跨上传材料的语义搜索 / Semantic search across uploaded materials
 - AI辅助写作的上下文注入 / Context injection for AI-assisted writing
@@ -36,6 +36,7 @@
 - **写作记忆** - 上下文感知的辅助 / Context-aware assistance
 - **多书籍支持** - 管理多个写作项目 / Manage multiple writing projects
 - **工具调用** - AI可以访问章节和参考资料 / AI can access chapters and references
+- **可确认写入** - AI 修改会先生成预览，确认后才写入编辑器 / AI edits are previewed before applying
 
 ---
 
@@ -77,6 +78,12 @@ python -m venv venv
 # Windows (Git Bash)
 source venv/Scripts/activate
 
+# Windows (PowerShell)
+.\venv\Scripts\Activate.ps1
+
+# macOS / Linux
+source venv/bin/activate
+
 # 安装依赖 / Install dependencies
 pip install -r requirements.txt
 
@@ -110,6 +117,8 @@ cd frontend
 npm run dev
 ```
 
+Windows 下也可以在安装依赖后运行根目录的 `start.ps1` 同时启动前后端。
+
 ### 4. 在浏览器中打开 / Open in Browser
 - 前端: http://localhost:3000 / Frontend: http://localhost:3000
 - 后端API文档: http://localhost:8000/docs / Backend API Docs: http://localhost:8000/docs
@@ -138,14 +147,14 @@ npm run dev
 - 点击「从文件夹导入」会按书名和章节顺序把 `.txt` 合并回数据库；导入前建议先下载备份。
 - `backend/workspace/`、数据库文件、备份文件默认不会进入 Git；换电脑时建议备份作品文件夹和数据库。
 
-### AI工具 / AI Tools
-- `/续写` - 继续当前场景 / Continue the current scene
-- `/改写` - 润色选中的文本 / Polish selected text
-- `/检查` - 检查问题 / Check for issues
-- `/情节` - 生成情节想法 / Generate plot ideas
+### AI 助手 / AI Assistant
+- 直接用自然语言提需求，例如“续写这一段”“润色当前章节”“检查伏笔有没有回收”。
+- AI 会自动注入当前章节、附近章节摘要、全书检索和已选语料作为上下文。
+- 闪光按钮会生成可确认的写作修改方案；聊天区显示说明，预览区显示将要写入正文的内容。
+- 所有 AI 写入都先进入预览，确认后才会应用到编辑器。
 
 ### RAG功能 / RAG Features
-1. 通过知识库模态框上传文档 / Upload documents via the Knowledge Base modal
+1. 通过知识库选择器上传纯文本资料 / Upload plain-text references via the Knowledge Base selector
 2. AI将自动参考相关材料 / AI will automatically reference relevant materials
 3. 跨上传内容搜索 / Search across uploaded content
 4. 从参考文本中模仿风格 / Style imitation from reference texts
@@ -155,15 +164,36 @@ npm run dev
 ## 🔧 API文档 / API Documentation
 
 ### 主要端点 / Key Endpoints
-- `POST /api/v1/ai/suggest` - AI续写 (带RAG) / AI continuation with RAG
-- `POST /api/v1/ai/rewrite` - 文本改写/润色 / Text polishing
-- `POST /api/v1/ai/check` - 语法/风格检查 / Grammar/style checking
-- `POST /api/v1/ai/plot` - 情节建议 / Plot suggestions
-- `POST /api/v1/knowledge/upload` - 文档上传 / Document upload
+- `GET /api/v1/ai/health` - AI 配置健康检查 / AI configuration health check
+- `POST /api/v1/ai/agent/edit-plan` - 生成可确认写作修改方案 / Generate a reviewable writing edit plan
+- `POST /api/v1/knowledge/upload` - 上传纯文本语料 / Upload plain-text reference material
 - `GET /api/v1/knowledge/search` - 语义搜索 / Semantic search
+- `GET /api/v1/books/` - 书籍列表 / List books
+- `GET /api/v1/books/{book_id}/chapters/` - 章节列表 / List chapters
+- `POST /api/v1/books/workspace/sync` - 同步作品文件夹 / Sync the novel workspace
 
 ### WebSocket聊天 / WebSocket Chat
-- `ws://localhost:8000/api/v1/ai/ws/chat` - 实时AI聊天 (带工具调用) / Real-time AI chat with tool calling
+- `ws://localhost:8000/api/v1/ai/ws` - 实时AI聊天 (带工具调用) / Real-time AI chat with tool calling
+
+---
+
+## ✅ 发布前检查 / Pre-Release Checks
+
+```bash
+# Windows PowerShell
+.\scripts\smoke.ps1
+
+# Backend
+cd backend
+python -m compileall app
+
+# Frontend
+cd ../frontend
+npm run lint
+npm run build
+```
+
+建议确认以下文件没有进入 Git：`backend/.env`、`frontend/.env.local`、`*.db`、`backend/workspace/`、`.chroma/`。
 
 ---
 

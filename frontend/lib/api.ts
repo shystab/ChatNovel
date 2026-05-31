@@ -8,6 +8,8 @@ import {
   Conversation,
   ConversationCreate,
   ConversationUpdate,
+  AgentEditPlan,
+  AgentEditRequest,
   Settings,
   SettingsUpdate,
   KnowledgeBase,
@@ -187,6 +189,14 @@ export const api = {
   },
   clearBackgroundImage: () =>
     req<Settings>(`${BASE}/settings/background`, { method: "DELETE" }),
+
+  // ── AI Agent ──────────────────────────────────
+  createAgentEditPlan: (data: AgentEditRequest) =>
+    req<AgentEditPlan>(`${BASE}/ai/agent/edit-plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
 
   // ── Knowledge Base ────────────────────────────
   getKnowledgeBases: () =>

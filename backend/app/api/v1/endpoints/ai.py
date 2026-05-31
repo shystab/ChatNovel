@@ -1,17 +1,19 @@
 """
 AI 辅助接口 - 提供写作辅助功能
 """
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 
-from app.models.ai import AIWSRequest
+from app.models.ai import AgentEditPlan, AgentEditRequest, AIWSRequest
 from app.services.ai_service import AIService, get_ai_service
 from app.services.ai_provider import AIProviderError
 from app.core.config import settings
 from app.db.session import get_session, engine
 from app.crud.settings_crud import get_settings
 from sqlmodel import Session
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def get_ai_service_with_db(session: Session = Depends(get_session)) -> AIService:
@@ -55,6 +57,36 @@ def ai_health():
         model = settings.OPENAI_MODEL
         base_url = settings.OPENAI_BASE_URL
     return {"provider": provider, "configured": configured, "model": model, "base_url": base_url}
+
+
+@router.post("/agent/edit-plan", response_model=AgentEditPlan)
+def create_agent_edit_plan(
+    req: AgentEditRequest,
+    ai_service: AIService = Depends(get_ai_service_with_db),
+    session: Session = Depends(get_session),
+):
+    """生成可审查的写作 agent 修改方案；不会直接写入章节。"""
+    if not check_api_key(session):
+        provider_name = settings.AI_PROVIDER
+        db_settings = get_settings(session)
+        if db_settings and db_settings.ai_provider:
+            provider_name = db_settings.ai_provider
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"请先配置 {provider_name.upper()}_API_KEY")
+
+    try:
+        return ai_service.propose_writing_edits(
+            instruction=req.instruction,
+            messages=[{"role": m.role, "content": m.content} for m in req.messages],
+            user_id=req.user_id,
+            project_id=req.project_id,
+            current_chapter_id=req.current_chapter_id,
+            book_id=req.book_id,
+            current_content=req.content,
+            selected_doc_ids=req.selected_doc_ids,
+            use_memory=req.use_memory,
+        )
+    except AIProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
 
 # ──────────────────────────────────────────────
@@ -111,7 +143,6 @@ async def ai_ws(websocket: WebSocket):
         await websocket.send_json({"type": "error", "message": str(e)})
         await websocket.close(code=1011)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("AI websocket failed: %s", e)
         await websocket.send_json({"type": "error", "message": f"server error: {e}"})
         await websocket.close(code=1011)

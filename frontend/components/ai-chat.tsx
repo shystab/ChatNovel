@@ -5,7 +5,7 @@ import { useWebSocket } from "@/hooks/use-websocket";
 import { api } from "@/lib/api";
 import { Send, ArrowLeftRight, Sparkles, ChevronDown, User, PanelRightClose, Library, Trash2, Plus, FileText, Database } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
-import { Chapter, Conversation } from "@/types/api";
+import { AgentEditPlan, Chapter, Conversation } from "@/types/api";
 import DocumentSelector from "@/components/document-selector";
 import ConfirmDialog from "@/components/confirm-dialog";
 import AgentApplyReview from "@/components/agent-apply-review";
@@ -66,10 +66,82 @@ function conversationMeta(conv: Conversation) {
   return parts.join(" · ");
 }
 
+function stripHtmlToText(value: string) {
+  return (value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function joinBlocks(...parts: string[]) {
+  return parts.map(part => part.trim()).filter(Boolean).join("\n\n");
+}
+
+function applyAgentPlanPreview(currentHtml: string, plan: AgentEditPlan) {
+  let next = stripHtmlToText(currentHtml);
+  const warnings: string[] = [];
+
+  if (!plan.operations.length) {
+    warnings.push("AI 没有返回可应用的修改步骤");
+    return { preview: next, warnings };
+  }
+
+  for (const op of plan.operations) {
+    const content = (op.content || "").trim();
+    if (op.action === "append") {
+      next = joinBlocks(next, content);
+      continue;
+    }
+    if (op.action === "prepend") {
+      next = joinBlocks(content, next);
+      continue;
+    }
+    if (op.action === "replace_all") {
+      next = content;
+      continue;
+    }
+    if (op.action === "insert_before" || op.action === "insert_after") {
+      const anchor = (op.anchor || "").trim();
+      const index = anchor ? next.indexOf(anchor) : -1;
+      if (index < 0) {
+        warnings.push(`没有找到定位文本，已把“${op.action}”降级为追加`);
+        next = joinBlocks(next, content);
+        continue;
+      }
+      if (next.indexOf(anchor, index + anchor.length) >= 0) {
+        warnings.push("定位文本出现多次，预览使用第一次匹配");
+      }
+      const insertAt = op.action === "insert_after" ? index + anchor.length : index;
+      next = `${next.slice(0, insertAt).trimEnd()}\n\n${content}\n\n${next.slice(insertAt).trimStart()}`.trim();
+      continue;
+    }
+    if (op.action === "replace_text") {
+      const findText = (op.find_text || "").trim();
+      const index = findText ? next.indexOf(findText) : -1;
+      if (index < 0) {
+        warnings.push("没有找到要替换的原文，这一步已跳过");
+        continue;
+      }
+      if (next.indexOf(findText, index + findText.length) >= 0) {
+        warnings.push("替换原文出现多次，预览只替换第一次匹配");
+      }
+      next = `${next.slice(0, index)}${content}${next.slice(index + findText.length)}`.trim();
+    }
+  }
+
+  return { preview: next, warnings };
+}
+
 export default function AIChat({ onInsertContent, onReplaceContent, getEditorContent, theme, onToggleRight, bookId, chapters = [], currentChapterId = null }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isLoading] = useState(false);
+  const [isPlanningEdit, setIsPlanningEdit] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -95,6 +167,9 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const [showDocSelector, setShowDocSelector] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
   const [applyProposal, setApplyProposal] = useState("");
+  const [agentPlan, setAgentPlan] = useState<AgentEditPlan | null>(null);
+  const [agentPreview, setAgentPreview] = useState("");
+  const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
 
   const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -300,7 +375,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const handleSend = async (text: string = input) => {
     const trimmed = text.trim();
     
-    if (!trimmed || isStreaming || isLoading) return;
+    if (!trimmed || isStreaming || isPlanningEdit) return;
 
     try {
       await ensureConversation();
@@ -323,6 +398,70 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
       messages: historyMessages,
       use_memory: true,
     });
+  };
+
+  const handleAgentEdit = async (text: string = input) => {
+    const trimmed = text.trim();
+    if (!trimmed || isStreaming || isPlanningEdit) return;
+
+    const currentEditorContent = getEditorContent();
+    if (!currentChapterId && !stripHtmlToText(currentEditorContent)) {
+      addAiMessage("请先选择或写入一个章节，再让 Agent 生成修改方案。");
+      return;
+    }
+
+    setIsPlanningEdit(true);
+    setApplyProposal("");
+    setAgentPlan(null);
+    setAgentPreview("");
+    setAgentWarnings([]);
+
+    try {
+      await ensureConversation();
+    } catch {}
+
+    const userMsg: Message = { role: "user", content: trimmed };
+    const pendingMessages: Message[] = [...messages, userMsg];
+    setMessages(pendingMessages);
+    persistMessages(pendingMessages);
+    setInput("");
+
+    const historyMessages = messages.map(m => ({
+      role: m.role === "ai" ? "assistant" : m.role,
+      content: m.content,
+    }));
+    historyMessages.push({ role: "user", content: trimmed });
+
+    try {
+      const plan = await api.createAgentEditPlan({
+        instruction: trimmed,
+        messages: historyMessages,
+        use_memory: true,
+        content: currentEditorContent,
+        book_id: bookId ?? null,
+        current_chapter_id: currentChapterId ?? null,
+        selected_doc_ids: selectedDocIds,
+      });
+      const { preview, warnings } = applyAgentPlanPreview(currentEditorContent, plan);
+      setAgentPlan(plan);
+      setAgentPreview(preview);
+      setAgentWarnings(warnings);
+
+      const riskText = plan.risk === "high" ? "高风险" : plan.risk === "low" ? "低风险" : "中风险";
+      const aiContent = plan.operations.length
+        ? `${plan.reply || `已生成修改方案：${plan.summary || "可确认写作修改"}`}（${plan.operations.length} 步，${riskText}）。`
+        : (plan.reply || "没有生成可应用的修改步骤，可以换一种更具体的说法再试。");
+      const finalMessages: Message[] = [...pendingMessages, { role: "ai", content: aiContent }];
+      setMessages(finalMessages);
+      persistMessages(finalMessages);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Agent 修改方案生成失败";
+      const finalMessages: Message[] = [...pendingMessages, { role: "ai", content: `出错了：${message}` }];
+      setMessages(finalMessages);
+      persistMessages(finalMessages);
+    } finally {
+      setIsPlanningEdit(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -361,6 +500,19 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
       onInsertContent(proposal);
     }
     setApplyProposal("");
+  };
+
+  const handleApplyAgentPlan = () => {
+    const preview = agentPreview.trim();
+    if (!preview) return;
+    if (onReplaceContent) {
+      onReplaceContent(preview);
+    } else {
+      onInsertContent(preview);
+    }
+    setAgentPlan(null);
+    setAgentPreview("");
+    setAgentWarnings([]);
   };
 
   const startNewConversation = () => {
@@ -418,7 +570,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     }
   };
 
-  const busy = isStreaming || isLoading;
+  const busy = isStreaming || isPlanningEdit;
 
   // ── 主题相关样式 ──────────────────────────────────────────────────────────────
   const borderClass = theme === 'dark' ? 'border-slate-700/60' : theme === 'sepia' ? 'border-amber-200' : 'border-slate-100';
@@ -429,6 +581,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const hoverBgClass = theme === 'dark' ? 'hover:bg-slate-800' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
   const inputBgClass = theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500 focus:bg-slate-700' : theme === 'sepia' ? 'bg-amber-100/50 border-amber-200 text-amber-900 placeholder:text-amber-400 focus:border-amber-400 focus:bg-amber-50' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:bg-white';
   const sendBtnClass = theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-600' : theme === 'sepia' ? 'bg-amber-800 hover:bg-amber-700 disabled:bg-amber-200 disabled:text-amber-400' : 'bg-slate-900 hover:bg-slate-700 disabled:bg-slate-100 disabled:text-slate-300';
+  const agentBtnClass = theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:text-slate-600' : theme === 'sepia' ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:text-amber-400' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:text-slate-300';
   const dropdownBg = theme === 'dark' ? 'bg-slate-800 border-slate-700' : theme === 'sepia' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200';
   const dropdownItemHover = theme === 'dark' ? 'hover:bg-slate-700' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
   const userMsgBg = theme === 'dark' ? 'bg-slate-700 text-slate-100' : theme === 'sepia' ? 'bg-amber-800 text-white' : 'bg-slate-900 text-white';
@@ -709,7 +862,12 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
                 </div>
                 {!msg.isStreaming && msg.content && (
                   <button
-                    onClick={() => setApplyProposal(msg.content)}
+                    onClick={() => {
+                      setAgentPlan(null);
+                      setAgentPreview("");
+                      setAgentWarnings([]);
+                      setApplyProposal(msg.content);
+                    }}
                     className={`flex items-center space-x-1.5 text-[10px] font-bold ${mutedClass} ${hoverBgClass} px-2 py-1 rounded-lg transition-colors`}
                     type="button"
                   >
@@ -738,6 +896,16 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
             style={{ minHeight: "40px", maxHeight: "120px" }}
           />
           <button
+            onClick={() => handleAgentEdit()}
+            disabled={!input.trim() || busy}
+            className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-xl transition-all ${agentBtnClass}`}
+            type="button"
+            title="生成可确认的修改方案"
+            aria-label="生成可确认的修改方案"
+          >
+            <Sparkles size={14} />
+          </button>
+          <button
             onClick={() => handleSend()}
             disabled={!input.trim() || busy}
             className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-xl text-white transition-all ${sendBtnClass}`}
@@ -748,12 +916,20 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
         </div>
       </div>
       <AgentApplyReview
-        open={Boolean(applyProposal)}
+        open={Boolean(applyProposal || agentPlan)}
         theme={theme}
         currentContent={getEditorContent()}
-        proposal={applyProposal}
-        onCancel={() => setApplyProposal("")}
+        proposal={agentPlan ? agentPreview : applyProposal}
+        plan={agentPlan}
+        warnings={agentWarnings}
+        onCancel={() => {
+          setApplyProposal("");
+          setAgentPlan(null);
+          setAgentPreview("");
+          setAgentWarnings([]);
+        }}
         onApply={handleApplyProposal}
+        onApplyPlan={handleApplyAgentPlan}
       />
     </div>
   );

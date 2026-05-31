@@ -90,6 +90,41 @@ export interface AISuggestResponse {
   reason: string;
 }
 
+export type AgentEditAction =
+  | "append"
+  | "prepend"
+  | "replace_all"
+  | "insert_before"
+  | "insert_after"
+  | "replace_text";
+
+export interface AgentEditOperation {
+  action: AgentEditAction;
+  content: string;
+  anchor?: string | null;
+  find_text?: string | null;
+  reason?: string | null;
+}
+
+export interface AgentEditPlan {
+  reply?: string;
+  summary: string;
+  risk: "low" | "medium" | "high";
+  operations: AgentEditOperation[];
+}
+
+export interface AgentEditRequest {
+  instruction: string;
+  messages?: Array<{ role: string; content: string }>;
+  user_id?: string;
+  project_id?: string;
+  current_chapter_id?: number | null;
+  book_id?: number | null;
+  selected_doc_ids?: number[];
+  content?: string;
+  use_memory?: boolean;
+}
+
 export interface Settings {
   id: number;
   theme: string;

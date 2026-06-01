@@ -6,6 +6,9 @@
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
+    "prepare:resources": "node scripts/prepare-resources.js",
+    "pack": "npm run prepare:resources && electron-builder --dir",
+    "dist": "npm run prepare:resources && electron-builder",
     "pack:shell": "electron-builder --dir",
     "dist:shell": "electron-builder"
   },
@@ -16,6 +19,7 @@
   "build": {
     "appId": "com.shysta.novelide",
     "productName": "Novel IDE",
+    "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "dist"
     },
@@ -24,8 +28,20 @@
       "preload.js",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "build-resources/backend",
+        "to": "backend"
+      },
+      {
+        "from": "build-resources/frontend",
+        "to": "frontend"
+      }
+    ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "signAndEditExecutable": false,
+      "signDlls": false
     },
     "nsis": {
       "oneClick": false,

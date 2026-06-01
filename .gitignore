@@ -54,6 +54,7 @@ build/
 next-env.d.ts
 
 # Electron desktop packaging
+desktop/build-resources/
 desktop/dist/
 desktop/out/
 desktop/release/

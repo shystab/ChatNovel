@@ -68,6 +68,9 @@ export default function RichEditor({
       StarterKit.configure({
         heading: false,
         blockquote: false,
+        bold: false,
+        italic: false,
+        code: false,
         codeBlock: false,
       }),
       Heading.configure({ levels: [1, 2, 3] }),

@@ -5,6 +5,8 @@ const http = require("http");
 const net = require("net");
 const path = require("path");
 
+app.setName("Novel IDE");
+
 const isPackaged = app.isPackaged;
 const rootDir = isPackaged ? process.resourcesPath : path.resolve(__dirname, "..");
 const backendDir = path.join(rootDir, "backend");
@@ -166,7 +168,7 @@ async function startBackend() {
   const packagedBackend = path.join(rootDir, "backend", "novel-backend.exe");
   if (isPackaged && fs.existsSync(packagedBackend)) {
     spawnManaged("backend", packagedBackend, [], { cwd: path.dirname(packagedBackend), env });
-    await waitFor(backendHealthUrl);
+    await waitFor(backendHealthUrl, isPackaged ? 180000 : 45000);
     return;
   }
 
@@ -182,7 +184,7 @@ async function startBackend() {
     ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort), "--log-level", "info"],
     { cwd: backendDir, env },
   );
-  await waitFor(backendHealthUrl);
+  await waitFor(backendHealthUrl, isPackaged ? 180000 : 45000);
   log("[backend] ready", backendHealthUrl);
 }
 

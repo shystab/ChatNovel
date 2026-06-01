@@ -71,6 +71,13 @@ $log = Join-Path $env:APPDATA "Novel IDE\logs\desktop.log"
 Get-Content $log -Tail 120
 ```
 
+If the executable immediately exits when launched from PowerShell, check that
+the current shell does not have Electron's Node mode enabled:
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+```
+
 If the backend does not start, first check that the normal backend command works:
 
 ```powershell
@@ -118,29 +125,62 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1
 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8000/api/v1/ai/ws
 ```
 
-## Shell Packaging
+## Usable Local Packaging
 
-The current Electron config can package the shell only:
+The desktop project now has two packaging paths.
+
+For a usable local desktop build, first build the frontend, then package from
+the desktop folder:
+
+```powershell
+cd ..\frontend
+npm run build
+
+cd ..\desktop
+npm run pack
+```
+
+`npm run pack` prepares `desktop/build-resources` and bundles:
+
+- the Next.js standalone server from `frontend/.next/standalone`;
+- frontend static assets from `frontend/.next/static` and `frontend/public`;
+- backend source from `backend/app`;
+- `backend/venv` when it exists.
+
+The generated unpacked app is under:
+
+```powershell
+desktop\dist\win-unpacked
+```
+
+Run the executable there to test without creating an installer.
+
+Create an installer with:
+
+```powershell
+npm run dist
+```
+
+This is still a local-runtime package: it depends on the bundled `backend/venv`
+working on the target Windows machine. For a cleaner standalone installer, the
+backend should still be packaged as `novel-backend.exe` with PyInstaller later.
+
+## Shell-Only Packaging
+
+If you only want to check Electron Builder configuration without bundling
+frontend/backend resources:
 
 ```powershell
 npm run pack:shell
 ```
 
-That is useful for checking Electron Builder configuration, but it is not a
-complete standalone app yet because the backend executable and frontend
-standalone output are not bundled.
+The shell-only build is not a complete app.
 
 ## Production Packaging Roadmap
 
-The final installer still needs these packaging steps:
+The final installer should eventually use these production steps:
 
-1. Build the frontend with `npm run build`. The app is configured for Next.js
-   standalone output.
-2. Package the backend into an executable, for example with PyInstaller.
-3. Add the frontend standalone server and backend executable as Electron
-   `extraResources`.
-4. Add those resources to Electron Builder `extraResources`.
-5. Run `npm run dist:shell` from this folder to produce an installer.
-
-This prototype intentionally keeps production resources out of the installer
-until the backend executable path is finalized.
+1. Keep building the frontend with `npm run build`.
+2. Package the backend into `novel-backend.exe`, for example with PyInstaller.
+3. Put `novel-backend.exe` into `desktop/build-resources/backend`.
+4. Run `npm run dist` from this folder.

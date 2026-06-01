@@ -1,33 +1,97 @@
-# 启动脚本 - Novel IDE (Fast)
-# 修复了前端目录路径问题（my-frontend → frontend）
-# 常见问题解决方案：
-# 1. PowerShell执行策略限制：以管理员身份运行 PowerShell，执行：Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-# 2. 端口占用：检查8000和3000端口是否被占用
-# 3. 依赖未安装：确保 backend/venv 和 frontend/node_modules 已安装
+param(
+    [switch]$SkipInstall,
+    [switch]$NoBrowser
+)
 
-Write-Host "正在启动 Novel IDE (Fast)..." -ForegroundColor Green
+$ErrorActionPreference = "Stop"
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$BackendDir = Join-Path $Root "backend"
+$FrontendDir = Join-Path $Root "frontend"
+$BackendVenv = Join-Path $BackendDir "venv"
+$BackendPython = Join-Path $BackendVenv "Scripts\python.exe"
+$BackendEnv = Join-Path $BackendDir ".env"
+$BackendEnvExample = Join-Path $BackendDir ".env.example"
+$FrontendNodeModules = Join-Path $FrontendDir "node_modules"
+
+function Require-Command {
+    param(
+        [string]$Name,
+        [string]$Hint
+    )
+
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        throw "$Name was not found. $Hint"
+    }
+}
+
+function Run-In {
+    param(
+        [string]$Path,
+        [scriptblock]$Command
+    )
+
+    Push-Location $Path
+    try {
+        & $Command
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 Write-Host ""
+Write-Host "Starting Novel IDE..." -ForegroundColor Green
 
-# 启动后端
-Write-Host "启动后端 (FastAPI on http://localhost:8000)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd backend; if (Test-Path 'venv\Scripts\Activate.ps1') { .\venv\Scripts\Activate.ps1 } else { Write-Host '警告: 虚拟环境未找到，请运行 cd backend; python -m venv venv; .\venv\Scripts\Activate.ps1; pip install -r requirements.txt' -ForegroundColor Yellow }; uvicorn app.main:app --reload --port 8000"
+Require-Command "python" "Install Python 3.11+ and make sure it is available in PATH."
+Require-Command "npm" "Install Node.js 18+ and make sure npm is available in PATH."
 
-# 等待2秒让后端启动
+if (-not (Test-Path $BackendEnv) -and (Test-Path $BackendEnvExample)) {
+    Copy-Item $BackendEnvExample $BackendEnv
+    Write-Host "Created backend/.env from backend/.env.example. Fill in your API key in the app settings or in backend/.env." -ForegroundColor Yellow
+}
+
+if (-not $SkipInstall) {
+    if (-not (Test-Path $BackendPython)) {
+        Write-Host "Creating Python virtual environment..." -ForegroundColor Cyan
+        Run-In $BackendDir { python -m venv venv }
+    }
+
+    $FastApiInstalled = $false
+    if (Test-Path $BackendPython) {
+        & $BackendPython -m pip show fastapi *> $null
+        $FastApiInstalled = ($LASTEXITCODE -eq 0)
+    }
+
+    if (-not $FastApiInstalled) {
+        Write-Host "Installing backend dependencies. This may take a while on first run..." -ForegroundColor Cyan
+        Run-In $BackendDir { & $BackendPython -m pip install -r requirements.txt }
+    }
+
+    if (-not (Test-Path $FrontendNodeModules)) {
+        Write-Host "Installing frontend dependencies. This may take a while on first run..." -ForegroundColor Cyan
+        Run-In $FrontendDir { npm install }
+    }
+}
+
+$BackendCommand = "Set-Location `"$BackendDir`"; & `"$BackendPython`" -m uvicorn app.main:app --reload --port 8000"
+$FrontendCommand = "Set-Location `"$FrontendDir`"; npm run dev"
+
+Write-Host "Launching backend on http://127.0.0.1:8000 ..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command", $BackendCommand
+
 Start-Sleep -Seconds 2
 
-# 启动前端
-Write-Host "启动前端 (Next.js on http://localhost:3000)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd frontend; npm run dev"
+Write-Host "Launching frontend on http://127.0.0.1:3000 ..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command", $FrontendCommand
+
+if (-not $NoBrowser) {
+    Start-Sleep -Seconds 3
+    Start-Process "http://127.0.0.1:3000"
+}
 
 Write-Host ""
-Write-Host "启动完成！" -ForegroundColor Green
-Write-Host "后端 API: http://localhost:8000" -ForegroundColor Yellow
-Write-Host "前端应用: http://localhost:3000" -ForegroundColor Yellow
-Write-Host "API 文档: http://localhost:8000/docs" -ForegroundColor Yellow
+Write-Host "Novel IDE is starting." -ForegroundColor Green
+Write-Host "Frontend: http://127.0.0.1:3000"
+Write-Host "Backend:  http://127.0.0.1:8000"
 Write-Host ""
-Write-Host "请手动关闭对应的 PowerShell 窗口以停止服务。" -ForegroundColor Magenta
-Write-Host "如有问题，请检查："
-Write-Host "1. 后端虚拟环境是否已安装 (backend/venv)"
-Write-Host "2. 前端依赖是否已安装 (frontend/node_modules)"
-Write-Host "3. 端口 8000 和 3000 是否未被占用"
-Write-Host ""
+Write-Host "Close the two opened PowerShell windows to stop the app."

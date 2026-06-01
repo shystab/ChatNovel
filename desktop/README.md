@@ -155,11 +155,31 @@ desktop\dist\win-unpacked
 
 Run the executable there to test without creating an installer.
 
-Create an installer with:
+Create a shareable zip package with:
 
 ```powershell
 npm run dist
 ```
+
+The zip is written to:
+
+```powershell
+desktop\dist\Novel-IDE-0.1.0-win-unpacked.zip
+```
+
+Extract it and run `Novel IDE.exe`. This avoids downloading NSIS installer
+binaries during packaging, which is useful on networks where GitHub downloads
+are unreliable.
+
+Create an NSIS installer with:
+
+```powershell
+npm run dist:installer
+```
+
+`dist:installer` may need Electron Builder's NSIS binaries. If it hangs on a
+GitHub download, keep using the zip package or preconfigure an Electron Builder
+binary mirror.
 
 This is still a local-runtime package: it depends on the bundled `backend/venv`
 working on the target Windows machine. For a cleaner standalone installer, the
@@ -183,4 +203,4 @@ The final installer should eventually use these production steps:
 1. Keep building the frontend with `npm run build`.
 2. Package the backend into `novel-backend.exe`, for example with PyInstaller.
 3. Put `novel-backend.exe` into `desktop/build-resources/backend`.
-4. Run `npm run dist` from this folder.
+4. Run `npm run dist:installer` from this folder.

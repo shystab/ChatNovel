@@ -8,7 +8,7 @@ import BookSelector from "@/components/book-selector";
 import { api } from "@/lib/api";
 import { Book, Chapter, EditorAppearance } from "@/types/api";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { PanelGroup, Panel, PanelResizeHandle } from "react-resizable-panels";
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import { useTheme } from "@/hooks/use-theme";
 
 const SESSION_KEY = "vibe_writer_session";
@@ -311,12 +311,12 @@ export default function Home() {
 
   return (
     <main className={`flex min-h-screen h-screen overflow-hidden ${colors.text} ${colors.bg} flex-col`}>
-      <PanelGroup direction="horizontal" className="flex-1 min-h-0">
+      <PanelGroup orientation="horizontal" className="flex-1 min-h-0">
 
         {/* 左侧：书籍选择器 + 章节列表 */}
         {showLeft && (
           <>
-            <Panel id="left-sidebar" order={1} defaultSize={18} minSize={14} maxSize={30}>
+            <Panel id="left-sidebar" defaultSize={18} minSize={14} maxSize={30}>
               <div className="flex flex-col h-full">
                 {/* 书籍选择器 */}
                 <BookSelector
@@ -347,7 +347,7 @@ export default function Home() {
         )}
 
         {/* 中间：编辑器 */}
-        <Panel id="editor" order={2} defaultSize={editorPanelSize} minSize={35}>
+        <Panel id="editor" defaultSize={editorPanelSize} minSize={35}>
           <div className={`flex flex-col h-full relative ${colors.editorBg}`}>
             <NovelEditor
               chapter={chapter}
@@ -370,7 +370,7 @@ export default function Home() {
         {showRight && (
           <>
             {resizeHandle("right-resize")}
-            <Panel id="ai-sidebar" order={3} defaultSize={22} minSize={18} maxSize={42}>
+            <Panel id="ai-sidebar" defaultSize={22} minSize={18} maxSize={42}>
               <AIChat
                 onInsertContent={insertContent}
                 onReplaceContent={replaceContent}

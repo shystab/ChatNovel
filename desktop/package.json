@@ -9,7 +9,7 @@
     "prepare:resources": "node scripts/prepare-resources.js",
     "pack": "npm run prepare:resources && electron-builder --dir",
     "dist": "npm run pack && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zip-unpacked.ps1",
-    "dist:installer": "npm run prepare:resources && electron-builder",
+    "dist:installer": "npm run prepare:resources && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "pack:shell": "electron-builder --dir",
     "dist:shell": "electron-builder"
   },

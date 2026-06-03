@@ -1,57 +1,30 @@
 # GitHub Release 发布流程
 
-这份文档记录当前项目最稳妥的发布方式：先发布 Windows zip 预览版，而不是正式安装包。
+当前推荐发布两个 Windows 附件：
 
-## 发布前检查
+- `Novel IDE Setup 0.1.0.exe`：普通用户优先下载的一键安装包。
+- `Novel-IDE-0.1.0-win-unpacked.zip`：安装包失败时的免安装兜底包。
 
-确认工作区里没有不想带进版本的改动：
+项目目前仍建议标记为 `alpha` 或 `pre-release`。
 
-```powershell
-git status
-```
+## 最推荐：GitHub Actions 自动构建
 
-跑一次检查：
-
-```powershell
-.\scripts\smoke.ps1
-```
-
-确认前端已经能生产构建：
-
-```powershell
-cd frontend
-npm run build
-```
-
-确认桌面端依赖已经安装：
-
-```powershell
-cd ..\desktop
-npm install
-```
-
-## 生成桌面 zip
-
-```powershell
-cd desktop
-npm run dist
-```
-
-成功后会生成类似文件：
+仓库已经包含：
 
 ```text
-desktop/dist/Novel-IDE-0.1.0-win-unpacked.zip
+.github/workflows/build-windows.yml
 ```
 
-这个 zip 就是当前建议上传到 GitHub Release 的文件。用户下载后解压，运行：
+你可以手动运行：
 
-```text
-Novel IDE.exe
-```
+1. 打开 GitHub 仓库。
+2. 进入 `Actions`。
+3. 选择 `Build Windows Desktop`。
+4. 点击 `Run workflow`。
+5. 等待构建完成。
+6. 在 workflow 的 `Artifacts` 中下载 `novel-ide-windows`。
 
-## 创建 tag
-
-版本号建议用 alpha 标记，例如：
+如果推送 tag，例如 `v0.1.0-alpha.1`，workflow 会自动创建 GitHub Release，并上传安装包和 zip。
 
 ```powershell
 git tag v0.1.0-alpha.1
@@ -59,18 +32,58 @@ git push origin main
 git push origin v0.1.0-alpha.1
 ```
 
-如果这个版本只是本地测试，不确定要长期保留，也可以先不打 tag，直接在 GitHub 网页草稿里创建 tag。
+## 本机手动构建
 
-## 在 GitHub 网页发布
+先确认依赖已经安装：
 
-1. 打开仓库页面。
-2. 进入 `Releases`。
-3. 点击 `Draft a new release`。
-4. 选择或创建 tag，例如 `v0.1.0-alpha.1`。
-5. Release title 写 `Novel IDE v0.1.0 alpha 1`。
-6. 上传 `desktop/dist/Novel-IDE-0.1.0-win-unpacked.zip`。
-7. 勾选 `Set as a pre-release`。
-8. 发布。
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+
+cd ..
+.\backend\scripts\build-desktop.ps1
+
+cd frontend
+npm install
+npm run build
+
+cd ..\desktop
+npm install
+```
+
+生成安装包：
+
+```powershell
+npm run dist:installer
+```
+
+输出文件：
+
+```text
+desktop/dist/Novel IDE Setup 0.1.0.exe
+```
+
+生成免安装 zip：
+
+```powershell
+npm run dist
+```
+
+输出文件：
+
+```text
+desktop/dist/Novel-IDE-0.1.0-win-unpacked.zip
+```
+
+## 网络问题
+
+Electron Builder 第一次生成 NSIS 安装包时，需要下载 NSIS 构建组件。项目里的 `desktop/scripts/build-installer.ps1` 已经做了两件事：
+
+- 把 Electron Builder 缓存放到 `desktop/.cache/electron-builder`
+- 默认使用 `https://npmmirror.com/mirrors/electron-builder-binaries/`
+
+如果本机网络仍然失败，直接用 GitHub Actions 构建。
 
 ## Release notes 模板
 
@@ -79,26 +92,22 @@ git push origin v0.1.0-alpha.1
 
 这是一个早期预览版，适合测试和反馈，不建议用于长期正式写作项目。
 
-### 包含内容
+### 下载
 
-- Windows 桌面 zip
-- 本地 FastAPI 后端
-- Next.js 前端
-- AI 对话和工具调用上下文
-- 章节管理、写作编辑器、参考文档检索
+- 推荐：`Novel IDE Setup 0.1.0.exe`
+- 兜底：`Novel-IDE-0.1.0-win-unpacked.zip`
 
 ### 使用方式
 
-1. 下载 zip。
-2. 解压到任意目录。
-3. 运行 `Novel IDE.exe`。
-4. 在设置中填写自己的 AI API Key。
+1. 下载并运行安装包。
+2. 打开 `Novel IDE`。
+3. 在设置中填写自己的 AI API Key。
 
 ### 已知问题
 
-- 首次启动可能较慢。
+- 未做代码签名，Windows 可能出现安全提示。
 - 包体较大。
-- 暂无签名安装包。
+- 首次启动可能较慢。
 - AI 功能需要用户自己的 API Key。
 - 导出和数据迁移仍需要更多测试。
 ```
@@ -113,10 +122,10 @@ git push origin v0.1.0-alpha.1
 - `backend/venv`
 - 开发日志
 
-## 后续可以改进
+## 后续改进
 
-- 使用 GitHub Actions 自动构建 release zip。
-- 增加安装包并处理签名。
-- 分离 Python 依赖，降低包体积。
-- 增加截图和更完整的新手指南。
-- 为导出、数据迁移和桌面启动补自动化测试。
+- 给应用增加正式图标。
+- 申请代码签名证书，减少 Windows 安全提示。
+- 继续验证 PyInstaller 后端在干净 Windows 机器上的启动稳定性。
+- 增加自动更新。
+- 增加安装后启动冒烟测试。

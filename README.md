@@ -8,12 +8,12 @@
 
 如果你只是想体验，不想折腾开发环境，优先用桌面版。
 
-### 方式一：下载桌面版
+### 方式一：下载桌面安装包
 
 1. 打开 GitHub 仓库右侧或顶部的 `Releases`。
-2. 下载最新的 `Novel-IDE-版本号-win-unpacked.zip`。
-3. 解压 zip。
-4. 双击 `Novel IDE.exe`。
+2. 下载最新的 `Novel IDE Setup 版本号.exe`。
+3. 双击安装包，按提示安装。
+4. 从桌面图标或开始菜单打开 `Novel IDE`。
 5. 在设置里填入自己的 DeepSeek 或 OpenAI 兼容 API Key。
 
 桌面版会自动启动本地后端和前端。你的作品数据默认保存在：
@@ -22,7 +22,7 @@
 %USERPROFILE%\Documents\Novel IDE
 ```
 
-注意：当前 zip 比较大是正常的，因为里面带了 Electron、网页前端、Python 后端和 AI/RAG 依赖。
+如果安装包暂时不可用，可以下载 `Novel-IDE-版本号-win-unpacked.zip`，解压后双击 `Novel IDE.exe`。当前包体比较大是正常的，因为里面带了 Electron、网页前端、Python 后端和 AI/RAG 依赖。
 
 ### 方式二：源码一键网页端
 
@@ -158,7 +158,20 @@ npm run pack
 desktop/dist/win-unpacked/Novel IDE.exe
 ```
 
-生成 GitHub Release 可上传的 zip：
+生成 GitHub Release 可上传的安装包：
+
+```powershell
+cd desktop
+npm run dist:installer
+```
+
+输出类似：
+
+```text
+desktop/dist/Novel IDE Setup 0.1.0.exe
+```
+
+生成免安装 zip：
 
 ```powershell
 cd desktop
@@ -182,7 +195,7 @@ desktop/dist/Novel-IDE-0.1.0-win-unpacked.zip
 ## 当前限制
 
 - 现在更适合标记为 `alpha` 或 `pre-release`。
-- 桌面端是 zip 解压运行，还不是签名安装包。
+- 安装包还没有代码签名，Windows 可能出现安全提示。
 - 首次启动和首次安装依赖会比较慢。
 - RAG 相关依赖较重，会增加桌面包体积。
 - 导出、数据迁移和异常恢复还需要更多测试。

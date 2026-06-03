@@ -83,6 +83,12 @@ function prepareBackend() {
   const targetDir = path.join(outputDir, "backend");
   ensureExists(path.join(backendSourceDir, "app", "main.py"));
 
+  const packagedBackend = path.join(backendSourceDir, "dist", "novel-backend.exe");
+  if (fs.existsSync(packagedBackend)) {
+    copyFile(packagedBackend, path.join(targetDir, "novel-backend.exe"));
+    return;
+  }
+
   copyDir(path.join(backendSourceDir, "app"), path.join(targetDir, "app"), backendFilter);
   copyFile(path.join(backendSourceDir, "requirements.txt"), path.join(targetDir, "requirements.txt"));
 

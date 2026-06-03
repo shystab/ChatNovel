@@ -130,6 +130,7 @@ function getBackendEnv() {
     ...env,
     DATABASE_URL: process.env.DATABASE_URL || `sqlite:///${path.join(dataDir, "novel_ide.db").replace(/\\/g, "/")}`,
     NOVEL_WORKSPACE_DIR: process.env.NOVEL_WORKSPACE_DIR || path.join(dataDir, "workspace"),
+    NOVEL_CHROMA_DIR: process.env.NOVEL_CHROMA_DIR || path.join(dataDir, ".chroma"),
   };
 }
 

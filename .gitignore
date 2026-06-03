@@ -25,6 +25,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.spec
 
 # Virtual Environment
 venv/
@@ -55,6 +56,7 @@ next-env.d.ts
 
 # Electron desktop packaging
 desktop/build-resources/
+desktop/.cache/
 desktop/dist/
 desktop/out/
 desktop/release/

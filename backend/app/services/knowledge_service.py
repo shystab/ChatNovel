@@ -41,7 +41,8 @@ def _chunk_text(text: str, max_chars: int = 800, overlap: int = 100) -> list[str
 
 
 class KnowledgeService:
-    def __init__(self, persist_dir: str = ".chroma", model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+    def __init__(self, persist_dir: str | None = None, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+        persist_dir = persist_dir or os.environ.get("NOVEL_CHROMA_DIR") or ".chroma"
         self.persist_dir = persist_dir
         os.makedirs(self.persist_dir, exist_ok=True)
 

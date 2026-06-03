@@ -127,7 +127,10 @@ NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8000/api/v1/ai/ws
 
 ## Usable Local Packaging
 
-The desktop project now has two packaging paths.
+The desktop project has two usable packaging paths:
+
+- `npm run dist:installer` creates a Windows installer for normal users.
+- `npm run dist` creates an unpacked zip fallback.
 
 For a usable local desktop build, first build the frontend, then package from
 the desktop folder:
@@ -155,7 +158,25 @@ desktop\dist\win-unpacked
 
 Run the executable there to test without creating an installer.
 
-Create a shareable zip package with:
+Create an NSIS installer with:
+
+```powershell
+npm run dist:installer
+```
+
+The installer is written to:
+
+```powershell
+desktop\dist\Novel IDE Setup 0.1.0.exe
+```
+
+`dist:installer` may need Electron Builder's NSIS binaries on first use. The
+project uses `scripts/build-installer.ps1` to keep the Electron Builder cache
+inside `desktop/.cache/electron-builder` and to default to an Electron Builder
+binary mirror. If local network policy still blocks that download, build the
+installer with GitHub Actions instead.
+
+Create a shareable zip fallback with:
 
 ```powershell
 npm run dist
@@ -171,19 +192,26 @@ Extract it and run `Novel IDE.exe`. This avoids downloading NSIS installer
 binaries during packaging, which is useful on networks where GitHub downloads
 are unreliable.
 
-Create an NSIS installer with:
+When `backend/dist/novel-backend.exe` exists, `prepare-resources` bundles that
+executable instead of `backend/venv`. This is the preferred path for releases.
+If the backend executable is missing, the package falls back to bundling
+`backend/venv`, which is useful for local testing but less reliable for other
+machines.
+
+## GitHub Actions Packaging
+
+The root workflow `.github/workflows/build-windows.yml` can build both the
+installer and zip on `windows-latest`.
+
+Run it manually from the GitHub Actions tab, or push a version tag:
 
 ```powershell
-npm run dist:installer
+git tag v0.1.0-alpha.1
+git push origin main
+git push origin v0.1.0-alpha.1
 ```
 
-`dist:installer` may need Electron Builder's NSIS binaries. If it hangs on a
-GitHub download, keep using the zip package or preconfigure an Electron Builder
-binary mirror.
-
-This is still a local-runtime package: it depends on the bundled `backend/venv`
-working on the target Windows machine. For a cleaner standalone installer, the
-backend should still be packaged as `novel-backend.exe` with PyInstaller later.
+On tag builds, the workflow uploads the installer and zip to a prerelease.
 
 ## Shell-Only Packaging
 
@@ -196,11 +224,14 @@ npm run pack:shell
 
 The shell-only build is not a complete app.
 
-## Production Packaging Roadmap
+## Backend Executable
 
-The final installer should eventually use these production steps:
+The GitHub Actions workflow builds the backend executable with PyInstaller
+before running Electron Builder. To do the same locally:
 
-1. Keep building the frontend with `npm run build`.
-2. Package the backend into `novel-backend.exe`, for example with PyInstaller.
-3. Put `novel-backend.exe` into `desktop/build-resources/backend`.
-4. Run `npm run dist:installer` from this folder.
+```powershell
+cd ..
+.\backend\scripts\build-desktop.ps1
+```
+
+Then run `npm run dist:installer` from `desktop`.

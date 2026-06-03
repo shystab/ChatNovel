@@ -41,21 +41,23 @@ def check_api_key(session: Session | None = None) -> bool:
 @router.get("/health")
 def ai_health():
     provider = settings.AI_PROVIDER
+    configured = False
     try:
         with Session(engine) as session:
             db_settings = get_settings(session)
             if db_settings and db_settings.ai_provider:
                 provider = db_settings.ai_provider
+            configured = check_api_key(session)
     except Exception:
         pass
     if provider == "deepseek":
-        configured = bool(settings.DEEPSEEK_API_KEY)
         model = settings.DEEPSEEK_MODEL
         base_url = settings.DEEPSEEK_BASE_URL
     else:
-        configured = bool(settings.OPENAI_API_KEY)
         model = settings.OPENAI_MODEL
         base_url = settings.OPENAI_BASE_URL
+    if not configured:
+        configured = check_api_key(None)
     return {"provider": provider, "configured": configured, "model": model, "base_url": base_url}
 
 

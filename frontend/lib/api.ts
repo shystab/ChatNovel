@@ -191,6 +191,9 @@ export const api = {
     req<Settings>(`${BASE}/settings/background`, { method: "DELETE" }),
 
   // ── AI Agent ──────────────────────────────────
+  getAiHealth: () =>
+    req<{ provider: string; configured: boolean; model: string; base_url: string }>(`${BASE}/ai/health`),
+
   createAgentEditPlan: (data: AgentEditRequest) =>
     req<AgentEditPlan>(`${BASE}/ai/agent/edit-plan`, {
       method: "POST",

@@ -333,6 +333,17 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     });
   };
 
+  const getAiUnavailableMessage = async () => {
+    try {
+      const health = await api.getAiHealth();
+      if (health.configured) return null;
+      const providerName = (health.provider || "AI").toUpperCase();
+      return `还没有配置 ${providerName} API Key。请先进入设置页填写 API Key，然后再使用 AI 聊天。`;
+    } catch {
+      return "后端服务暂时不可用。请确认 start-web.cmd 已正常启动，或查看 .run/logs 日志。";
+    }
+  };
+
 
   const startStream = (request: Parameters<typeof connect>[0]) => {
     streamBufferRef.current = "";
@@ -388,6 +399,14 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     persistMessages(newMessages);
     setInput("");
 
+    const unavailableMessage = await getAiUnavailableMessage();
+    if (unavailableMessage) {
+      const finalMessages: Message[] = [...newMessages, { role: "ai", content: unavailableMessage }];
+      setMessages(finalMessages);
+      persistMessages(finalMessages);
+      return;
+    }
+
     const historyMessages = messages.map(m => ({
       role: m.role === "ai" ? "assistant" : m.role,
       content: m.content,
@@ -425,6 +444,15 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     setMessages(pendingMessages);
     persistMessages(pendingMessages);
     setInput("");
+
+    const unavailableMessage = await getAiUnavailableMessage();
+    if (unavailableMessage) {
+      const finalMessages: Message[] = [...pendingMessages, { role: "ai", content: unavailableMessage }];
+      setMessages(finalMessages);
+      persistMessages(finalMessages);
+      setIsPlanningEdit(false);
+      return;
+    }
 
     const historyMessages = messages.map(m => ({
       role: m.role === "ai" ? "assistant" : m.role,

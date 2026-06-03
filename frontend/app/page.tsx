@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import ChapterList from "@/components/chapter-list";
 import NovelEditor from "@/components/novel-editor";
 import AIChat from "@/components/ai-chat";
@@ -8,7 +8,6 @@ import BookSelector from "@/components/book-selector";
 import { api } from "@/lib/api";
 import { Book, Chapter, EditorAppearance } from "@/types/api";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import { useTheme } from "@/hooks/use-theme";
 
 const SESSION_KEY = "vibe_writer_session";
@@ -77,6 +76,8 @@ export default function Home() {
 
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
+  const [leftWidth, setLeftWidth] = useState(300);
+  const [rightWidth, setRightWidth] = useState(380);
   const { theme, colors } = useTheme();
 
   // ── 启动序列 ──────────────────────────────────────
@@ -293,30 +294,78 @@ export default function Home() {
 
   const toggleLeft = () => setShowLeft((v) => !v);
   const toggleRight = () => setShowRight((v) => !v);
-  const editorPanelSize = showLeft && showRight ? 60 : showLeft ? 82 : showRight ? 78 : 100;
   const resizeLineClass =
     theme === "dark"
       ? "bg-slate-700 group-hover:bg-slate-500"
       : theme === "sepia"
         ? "bg-amber-200 group-hover:bg-amber-400"
         : "bg-slate-200 group-hover:bg-slate-400";
-  const resizeHandle = (id: string) => (
-    <PanelResizeHandle
+
+  const startResize = useCallback((
+    side: "left" | "right",
+    event: ReactMouseEvent<HTMLDivElement>
+  ) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startLeftWidth = leftWidth;
+    const startRightWidth = rightWidth;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      if (side === "left") {
+        setLeftWidth(Math.min(460, Math.max(240, startLeftWidth + delta)));
+      } else {
+        setRightWidth(Math.min(580, Math.max(300, startRightWidth - delta)));
+      }
+    };
+
+    const onMouseUp = () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }, [leftWidth, rightWidth]);
+
+  const resizeHandle = (id: string, side: "left" | "right") => (
+    <div
       id={id}
-      className="group relative w-2 shrink-0 cursor-col-resize outline-none"
+      role="separator"
+      aria-orientation="vertical"
+      className="group relative h-full w-2 cursor-col-resize outline-none"
+      onMouseDown={(event) => startResize(side, event)}
     >
       <div className={`absolute left-1/2 top-0 h-full w-px -translate-x-1/2 transition-colors ${resizeLineClass}`} />
-    </PanelResizeHandle>
+    </div>
   );
+
+  const gridTemplateColumns = [
+    showLeft ? `${leftWidth}px` : "",
+    showLeft ? "8px" : "",
+    "minmax(420px, 1fr)",
+    showRight ? "8px" : "",
+    showRight ? `${rightWidth}px` : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <main className={`flex min-h-screen h-screen overflow-hidden ${colors.text} ${colors.bg} flex-col`}>
-      <PanelGroup orientation="horizontal" className="flex-1 min-h-0">
+      <div
+        className="grid flex-1 min-h-0 w-full"
+        style={{ gridTemplateColumns }}
+      >
 
         {/* 左侧：书籍选择器 + 章节列表 */}
         {showLeft && (
           <>
-            <Panel id="left-sidebar" defaultSize={18} minSize={14} maxSize={30}>
+            <aside id="left-sidebar" className="min-w-0 overflow-hidden">
               <div className="flex flex-col h-full">
                 {/* 书籍选择器 */}
                 <BookSelector
@@ -341,13 +390,13 @@ export default function Home() {
                   />
                 </div>
               </div>
-            </Panel>
-            {resizeHandle("left-resize")}
+            </aside>
+            {resizeHandle("left-resize", "left")}
           </>
         )}
 
         {/* 中间：编辑器 */}
-        <Panel id="editor" defaultSize={editorPanelSize} minSize={35}>
+        <section id="editor" className="min-w-0 overflow-hidden">
           <div className={`flex flex-col h-full relative ${colors.editorBg}`}>
             <NovelEditor
               chapter={chapter}
@@ -364,13 +413,13 @@ export default function Home() {
               appearance={editorAppearance}
             />
           </div>
-        </Panel>
+        </section>
 
         {/* 右侧：AI 对话 */}
         {showRight && (
           <>
-            {resizeHandle("right-resize")}
-            <Panel id="ai-sidebar" defaultSize={22} minSize={18} maxSize={42}>
+            {resizeHandle("right-resize", "right")}
+            <aside id="ai-sidebar" className="min-w-0 overflow-hidden">
               <AIChat
                 onInsertContent={insertContent}
                 onReplaceContent={replaceContent}
@@ -382,11 +431,11 @@ export default function Home() {
                 chapters={chapters}
                 currentChapterId={selectedChapterId}
               />
-            </Panel>
+            </aside>
           </>
         )}
 
-      </PanelGroup>
+      </div>
 
       {/* 左侧面板收起时，显示展开按钮（固定在左边缘） */}
       {!showLeft && (

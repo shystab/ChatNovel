@@ -87,12 +87,16 @@ backend/workspace/
 !.env.local.example
 frontend/.env.local
 !frontend/.env.local.example
+.secret.key
+backend/.secret.key
 
 # Logs
 *.log
+.run/
 
 # ChromeDB vector store
 .chroma/
+backend/.chroma/
 
 # Claude working directory
 .claude/

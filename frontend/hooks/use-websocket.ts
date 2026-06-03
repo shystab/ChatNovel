@@ -29,6 +29,7 @@ export function useWebSocket() {
 
     const ws = new WebSocket(WS_BASE_URL);
     wsRef.current = ws;
+    let settled = false;
 
     ws.onopen = () => {
       ws.send(JSON.stringify(request));
@@ -52,11 +53,13 @@ export function useWebSocket() {
           handlers?.onAnalysis?.(data.data);
           break;
         case "done":
+          settled = true;
           setIsStreaming(false);
           handlers?.onDone?.();
           ws.close();
           break;
         case "error":
+          settled = true;
           setIsStreaming(false);
           setError(data.message);
           handlers?.onError?.(data.message);
@@ -66,6 +69,7 @@ export function useWebSocket() {
     };
 
     ws.onerror = () => {
+      settled = true;
       setIsStreaming(false);
       setError("WebSocket connection error");
       handlers?.onError?.("WebSocket connection error");
@@ -73,6 +77,11 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       setIsStreaming(false);
+      if (!settled) {
+        const message = "AI 连接已断开，请检查后端服务或 API Key 设置";
+        setError(message);
+        handlers?.onError?.(message);
+      }
     };
   }, []);
 

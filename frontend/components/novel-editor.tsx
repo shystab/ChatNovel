@@ -10,6 +10,10 @@ export interface NovelEditorProps {
   status: string;
   onChangeContent: (content: string) => void;
   onSave: () => void;
+  previousChapter?: Chapter | null;
+  nextChapter?: Chapter | null;
+  onSelectChapter?: (id: number) => void;
+  onCreateChapter?: () => void;
   theme: Theme;
   colors: ThemeColors;
   showLeft?: boolean;

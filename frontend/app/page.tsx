@@ -201,6 +201,40 @@ export default function Home() {
     setBooks(newBooks);
   }, []);
 
+  const updateCurrentChapterContent = useCallback((chapterId: number, nextContent: string) => {
+    setChapter((current) => (
+      current?.id === chapterId ? { ...current, content: nextContent } : current
+    ));
+    setChapters((current) => current.map((item) => (
+      item.id === chapterId ? { ...item, content: nextContent } : item
+    )));
+  }, []);
+
+  const saveCurrentChapter = useCallback(async () => {
+    if (!selectedChapterId) return true;
+    if (content === lastSavedRef.current) return true;
+
+    setStatus("保存中...");
+    try {
+      let savedChapter: Chapter;
+      if (activeBookId) {
+        savedChapter = await api.updateChapterInBook(activeBookId, selectedChapterId, { content });
+      } else {
+        savedChapter = await api.updateChapter(selectedChapterId, { content });
+      }
+      setChapter(savedChapter);
+      setChapters((current) => current.map((item) => (
+        item.id === selectedChapterId ? { ...item, ...savedChapter } : item
+      )));
+      lastSavedRef.current = content;
+      setStatus("已同步");
+      return true;
+    } catch {
+      setStatus("保存失败");
+      return false;
+    }
+  }, [selectedChapterId, content, activeBookId]);
+
   // ── 章节操作 ──────────────────────────────────────
   const loadChapter = useCallback(
     async (id: number) => {
@@ -232,9 +266,11 @@ export default function Home() {
     [activeBookId]
   );
 
-  const handleChapterSelect = (id: number) => {
+  const handleChapterSelect = async (id: number) => {
+    const saved = await saveCurrentChapter();
+    if (!saved) return;
     setSelectedChapterId(id === -1 ? null : id);
-    void loadChapter(id);
+    await loadChapter(id);
   };
 
   // 章节列表变化时（新建/删除），同步刷新
@@ -247,39 +283,71 @@ export default function Home() {
 
   const insertContent = (text: string) => {
     const html = textToEditorHtml(text);
-    setContent((prev) => (prev.trim() ? `${prev}<p></p>${html}` : html));
+    setContent((prev) => {
+      const nextContent = prev.trim() ? `${prev}<p></p>${html}` : html;
+      syncCurrentChapterDraft(nextContent);
+      return nextContent;
+    });
     setStatus("未保存");
   };
 
   const replaceContent = (text: string) => {
-    setContent(textToEditorHtml(text));
+    const nextContent = textToEditorHtml(text);
+    setContent(nextContent);
+    syncCurrentChapterDraft(nextContent);
     setStatus("未保存");
   };
 
   const getEditorContent = useCallback(() => content, [content]);
 
+  const syncCurrentChapterDraft = useCallback((nextContent: string) => {
+    if (!selectedChapterId) return;
+    updateCurrentChapterContent(selectedChapterId, nextContent);
+  }, [selectedChapterId, updateCurrentChapterContent]);
+
   const handleContentChange = useCallback((nextContent: string) => {
     setContent(nextContent);
+    syncCurrentChapterDraft(nextContent);
     if (selectedChapterId && nextContent !== lastSavedRef.current) {
       setStatus("未保存");
     }
-  }, [selectedChapterId]);
+  }, [selectedChapterId, syncCurrentChapterDraft]);
 
   const handleSave = useCallback(async () => {
-    if (!selectedChapterId) return;
-    setStatus("保存中...");
+    await saveCurrentChapter();
+  }, [saveCurrentChapter]);
+
+  const orderedChapters = [...chapters].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const currentChapterIndex = selectedChapterId
+    ? orderedChapters.findIndex((item) => item.id === selectedChapterId)
+    : -1;
+  const previousChapter = currentChapterIndex > 0 ? orderedChapters[currentChapterIndex - 1] : null;
+  const nextChapter = currentChapterIndex >= 0 && currentChapterIndex < orderedChapters.length - 1
+    ? orderedChapters[currentChapterIndex + 1]
+    : null;
+
+  const handleCreateChapterFromEditor = useCallback(async () => {
+    if (!activeBookId) return;
+    const saved = await saveCurrentChapter();
+    if (!saved) return;
+
+    const nextOrder = Math.max(0, ...chapters.map(item => item.order || 0)) + 1;
     try {
-      if (activeBookId) {
-        await api.updateChapterInBook(activeBookId, selectedChapterId, { content });
-      } else {
-        await api.updateChapter(selectedChapterId, { content });
-      }
-      lastSavedRef.current = content;
+      const newChapter = await api.createChapterInBook(activeBookId, {
+        title: `第 ${nextOrder} 章`,
+        content: "",
+        order: nextOrder,
+      });
+      setChapters((current) => [...current, newChapter]);
+      setSelectedChapterId(newChapter.id);
+      setChapter(newChapter);
+      setContent("");
+      lastSavedRef.current = "";
       setStatus("已同步");
     } catch {
-      setStatus("保存失败");
+      setStatus("新建失败");
     }
-  }, [selectedChapterId, content, activeBookId]);
+  }, [activeBookId, chapters, saveCurrentChapter]);
 
   // 自动保存（按设置页配置的秒数防抖；0 表示关闭）
   useEffect(() => {
@@ -404,6 +472,10 @@ export default function Home() {
               status={status}
               onChangeContent={handleContentChange}
               onSave={handleSave}
+              previousChapter={previousChapter}
+              nextChapter={nextChapter}
+              onSelectChapter={(id) => { void handleChapterSelect(id); }}
+              onCreateChapter={handleCreateChapterFromEditor}
               theme={theme}
               colors={colors}
               showLeft={showLeft}

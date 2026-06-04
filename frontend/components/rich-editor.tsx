@@ -15,11 +15,14 @@ import type { Theme, ThemeColors } from "@/hooks/use-theme";
 import {
   Save,
   AlignLeft,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   Bold as BoldIcon,
   Italic as ItalicIcon,
   Heading1,
   Heading2,
+  Plus,
   Quote,
   Code as CodeIcon,
 } from "lucide-react";
@@ -31,6 +34,10 @@ interface RichEditorProps {
   status: string;
   onChangeContent: (content: string) => void;
   onSave: () => void;
+  previousChapter?: Chapter | null;
+  nextChapter?: Chapter | null;
+  onSelectChapter?: (id: number) => void;
+  onCreateChapter?: () => void;
   theme: Theme;
   colors: ThemeColors;
   showLeft?: boolean;
@@ -58,6 +65,10 @@ export default function RichEditor({
   status,
   onChangeContent,
   onSave,
+  previousChapter,
+  nextChapter,
+  onSelectChapter,
+  onCreateChapter,
   theme,
   colors,
   appearance,
@@ -134,6 +145,11 @@ export default function RichEditor({
   const toolbarBg = theme === 'dark' ? 'bg-slate-800/40' : theme === 'sepia' ? 'bg-amber-100/30' : 'bg-slate-50/80';
   const toolbarBtn = `p-1.5 rounded transition-all ${textClass}`;
   const toolbarBtnActive = theme === 'dark' ? 'bg-slate-700' : theme === 'sepia' ? 'bg-amber-200' : 'bg-slate-200';
+  const navButtonClass = `p-1.5 rounded-lg transition-all ${mutedClass} ${
+    theme === 'dark' ? 'hover:bg-slate-700/60 hover:text-slate-200 disabled:hover:bg-transparent' :
+    theme === 'sepia' ? 'hover:bg-amber-100 hover:text-amber-900 disabled:hover:bg-transparent' :
+    'hover:bg-slate-100 hover:text-slate-800 disabled:hover:bg-transparent'
+  } disabled:opacity-35 disabled:cursor-not-allowed`;
 
   const hasBackground = Boolean(appearance?.background_url);
   const backgroundDim = Math.min(Math.max(appearance?.background_dim ?? 22, 0), 85) / 100;
@@ -185,6 +201,26 @@ export default function RichEditor({
       <header className={`px-5 py-2.5 border-b ${borderClass} flex justify-between items-center ${chromeBg} z-30 shrink-0`}>
         {/* 左侧：章节标题 */}
         <div className="flex items-center space-x-2 min-w-0">
+          <div className="flex items-center space-x-0.5 shrink-0">
+            <button
+              onClick={() => previousChapter && onSelectChapter?.(previousChapter.id)}
+              disabled={!previousChapter}
+              className={navButtonClass}
+              type="button"
+              title={previousChapter ? `上一章：${previousChapter.title}` : "没有上一章"}
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              onClick={() => nextChapter && onSelectChapter?.(nextChapter.id)}
+              disabled={!nextChapter}
+              className={navButtonClass}
+              type="button"
+              title={nextChapter ? `下一章：${nextChapter.title}` : "没有下一章"}
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
           <h1 className={`font-bold ${headingClass} text-sm tracking-tight truncate max-w-[220px]`}>
             {chapter.title}
           </h1>
@@ -262,6 +298,20 @@ export default function RichEditor({
             <span className="opacity-40">·</span>
             <span>{estimateReadTime(words)}</span>
           </div>
+
+          <button
+            onClick={onCreateChapter}
+            className={`hidden sm:flex items-center space-x-1.5 text-xs font-bold ${mutedClass} transition-all px-2.5 py-1.5 rounded-lg ${
+              theme === 'dark' ? 'hover:bg-slate-700/60 hover:text-slate-200' :
+              theme === 'sepia' ? 'hover:bg-amber-100 hover:text-amber-900' :
+              'hover:bg-slate-100 hover:text-slate-800'
+            }`}
+            type="button"
+            title="新建章节"
+          >
+            <Plus size={12} />
+            <span>新章</span>
+          </button>
 
           <button
             onClick={onSave}

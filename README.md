@@ -1,72 +1,83 @@
 # Novel IDE / ChatNovel
 
-一个本地优先的 AI 小说写作工具。现在推荐先按“浏览器本地应用”的方式使用：双击启动器，后台启动服务，然后自动打开一个类似桌面应用的浏览器窗口。
+本地优先的 AI 小说写作工具。它不是聊天壳子，而是围绕“长篇小说写作”做的编辑器：书籍、章节、正文、摘要、参考文档、AI 辅助写作都放在同一个工作流里。
 
-> 当前状态：Alpha。重点还在打磨写作体验，不建议把它当成成熟软件。
+> 当前状态：Alpha。现在推荐作为“本地网页应用”使用，不推荐把 Electron 桌面安装包当作主线版本。
 
-## 最快使用
+## 现在适合谁用
 
-需要先安装：
+- 想在本机写小说、整理章节、让 AI 辅助续写或分析的人
+- 能接受项目还在打磨中，偶尔需要重新启动服务的人
+- Windows 用户，愿意双击 `.cmd` 启动
 
-- Python 3.11+
-- Node.js 18+
+暂时不适合：
+
+- 想要成熟商业软件体验的人
+- 想要几十 MB 轻量安装包的人
+- 完全不想安装 Python / Node.js 环境的人
+
+## 一分钟启动
+
+先安装这三个东西：
+
+- Python 3.11 或更新版本
+- Node.js 18 或更新版本
 - Git
 
-下载源码：
+然后打开 Windows 的命令提示符，也就是 cmd，输入：
 
-```powershell
+```cmd
 git clone https://github.com/shystab/ChatNovel.git
 cd ChatNovel
 ```
 
-然后双击：
+双击项目里的：
 
 ```text
 start-web.cmd
 ```
 
-第一次启动会自动：
+第一次启动会自动安装依赖，可能比较慢。启动成功后会自动打开浏览器页面。
 
-- 创建 `backend/venv`
-- 安装后端依赖
-- 安装前端依赖
-- 创建 `backend/.env`
-- 启动后端和前端
-- 在默认浏览器中打开 `http://127.0.0.1:3000`
-
-停止服务时双击：
+默认地址是：
 
 ```text
-stop-web.cmd
+http://127.0.0.1:3000
 ```
 
-日志在：
+如果 Windows 不允许使用 3000 端口，启动器会自动换到其他端口，比如：
 
 ```text
-.run/logs/
+http://127.0.0.1:3200
 ```
 
-清理本地运行缓存和日志：
+## 常用按钮
 
-```powershell
-.\scripts\clean.ps1
+```text
+start-web.cmd   启动本地网页应用
+stop-web.cmd    停止后台服务
+install.cmd     只安装或更新依赖，不打开应用
+doctor.cmd      检查 Python、Node、依赖和端口
+clean.cmd       清理日志和缓存，不删除作品
 ```
 
-如果想用 Edge/Chrome 的无地址栏 app 窗口打开：
+普通使用只需要记住：
 
-```powershell
-.\start.ps1 -AppWindow
+```text
+start-web.cmd
 ```
 
-如果已经安装过依赖，只想快速启动：
+出问题时先试：
 
-```powershell
-.\start.ps1 -SkipInstall
+```text
+doctor.cmd
 ```
 
 ## AI Key
 
-AI 功能需要你自己的 DeepSeek 或 OpenAI 兼容 API Key。可以在应用设置里填，也可以编辑：
+不填 API Key 也可以打开界面、创建书籍、编辑章节。
+
+AI 对话、续写、分析等功能需要你自己的 DeepSeek 或 OpenAI API Key。可以在应用的“设置”里填写，也可以编辑：
 
 ```text
 backend/.env
@@ -81,7 +92,61 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-chat
 ```
 
-不填 API Key 也可以打开界面、创建书籍和编辑章节，但 AI 对话不可用。
+API Key 只保存在本地，不应该上传到 GitHub。
+
+## 数据保存和备份
+
+主要本地数据在这些位置：
+
+```text
+backend/novel_ide.db      本地数据库
+backend/workspace/        作品文件夹和导出文件
+backend/.env              API 配置
+backend/.secret.key       本机加密密钥
+```
+
+不要随便删除这些文件，尤其是：
+
+```text
+backend/novel_ide.db
+backend/workspace/
+backend/.secret.key
+```
+
+建议备份方式：
+
+- 在应用设置里使用“下载备份 ZIP”
+- 或者手动复制整个项目文件夹
+
+`clean.cmd` 和 `scripts/clean.ps1` 只清理日志、缓存和打包产物，不会删除作品数据库、作品文件夹、API Key 配置、虚拟环境或 `node_modules`。
+
+## 首次启动失败怎么办
+
+先双击：
+
+```text
+doctor.cmd
+```
+
+如果提示后端依赖缺失，可以删除虚拟环境后重新启动：
+
+```cmd
+rmdir /s /q backend\venv
+start-web.cmd
+```
+
+如果提示前端依赖缺失，可以删除前端依赖后重新启动：
+
+```cmd
+rmdir /s /q frontend\node_modules
+start-web.cmd
+```
+
+启动日志在：
+
+```text
+.run/logs/
+```
 
 ## 主要功能
 
@@ -100,16 +165,15 @@ DEEPSEEK_MODEL=deepseek-chat
 ```text
 backend/      FastAPI 后端、数据库、AI/RAG 服务
 frontend/     Next.js 前端、编辑器、聊天和设置页面
-desktop/      Electron 桌面端实验性打包
 docs/         额外说明文档
 scripts/      检查和清理脚本
 start.ps1     网页端启动脚本
-start-web.cmd 双击启动网页端
-stop.ps1      停止后台服务
-stop-web.cmd  双击停止后台服务
+stop.ps1      停止后台服务脚本
 ```
 
-## 开发命令
+根目录下的 `.cmd` 文件是给 Windows 用户双击用的。
+
+## 开发者命令
 
 手动启动后端：
 
@@ -136,25 +200,22 @@ npm run dev
 - 后端：`http://127.0.0.1:8000`
 - API 文档：`http://127.0.0.1:8000/docs`
 
-## 检查
+完整检查：
 
 ```powershell
 .\scripts\smoke.ps1
 ```
 
-会执行后端编译检查、前端 lint 和前端生产构建。
+## 当前路线
 
-清理本地运行产物：
+短期主线是本地 Web 版：先把启动、写作体验、章节管理、AI 上下文和备份做舒服。
 
-```powershell
-.\scripts\clean.ps1
-```
+Electron 安装包暂时不是主线，因为把 Python、Electron、RAG 相关依赖都塞进安装包后体积会很大，维护成本也高。
 
-这个脚本只会删除日志、Next.js 缓存、Electron 打包输出和源码缓存，不会删除数据库、作品工作区、API Key 配置、虚拟环境或 `node_modules`。
+更多说明：
 
-## 当前判断
-
-安装包路线暂时不是主线，因为把 Python、Electron、RAG 依赖都塞进安装包后体积过大。短期更合理的路线是把它作为本地网页应用来打磨：启动足够简单，写作体验先变舒服，再考虑正式桌面打包。
+- [本地 Web Alpha 收尾说明](docs/local-web-alpha.md)
+- [服务器版改造计划](docs/server-version-plan.md)
 
 ## License
 

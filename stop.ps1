@@ -2,7 +2,23 @@ $ErrorActionPreference = "SilentlyContinue"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RunDir = Join-Path $Root ".run"
-$Ports = @(3000, 8000)
+$Ports = New-Object System.Collections.Generic.List[int]
+$DefaultPorts = @(3000, 8000, 3200, 3201, 3202, 4173, 5173, 5174, 6173)
+
+foreach ($port in $DefaultPorts) {
+    $Ports.Add($port)
+}
+
+foreach ($portFile in @("frontend.port", "backend.port")) {
+    $path = Join-Path $RunDir $portFile
+    if (Test-Path $path) {
+        $value = Get-Content $path -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($value -match "^\d+$" -and -not $Ports.Contains([int]$value)) {
+            $Ports.Add([int]$value)
+        }
+        Remove-Item $path -Force -ErrorAction SilentlyContinue
+    }
+}
 
 function Stop-PidFile {
     param([string]$Path)

@@ -28,6 +28,7 @@ export interface Chapter {
   id: number;
   title: string;
   content: string;
+  summary?: string;
   order: number;
   book_id?: number;
   create_time: string;

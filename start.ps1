@@ -26,7 +26,7 @@ $FrontendPackageJson = Join-Path $FrontendDir "package.json"
 $FrontendInstallStamp = Join-Path $FrontendNodeModules ".package-lock.sha256"
 $BackendPort = 8000
 $FrontendPortCandidates = @(3000, 3200, 3201, 3202, 4173, 5173, 5174, 6173)
-$BackendHealthUrl = "http://127.0.0.1:$BackendPort/api/v1/ai/health"
+$BackendHealthUrl = "http://127.0.0.1:$BackendPort/"
 $FrontendPort = $null
 $FrontendUrl = $null
 $MinimumPythonVersion = [version]"3.11.0"
@@ -254,14 +254,27 @@ function Open-AppBrowser {
     Start-Process $Url
 }
 
+function Get-EnvFlag {
+    param([string]$Path, [string]$Name)
+
+    if (-not (Test-Path $Path)) {
+        return $false
+    }
+
+    $line = Get-Content -Path $Path -Encoding UTF8 |
+        Where-Object { $_ -match "^\s*$Name\s*=\s*true\s*$" } |
+        Select-Object -First 1
+    return [bool]$line
+}
+
 New-Item -ItemType Directory -Force $LogDir | Out-Null
 
 Write-Host ""
 if ($InstallOnly) {
-    Write-Host "Preparing Novel IDE dependencies..." -ForegroundColor Green
+    Write-Host "Preparing NovelCat dependencies..." -ForegroundColor Green
 }
 else {
-    Write-Host "Starting Novel IDE web app..." -ForegroundColor Green
+    Write-Host "Starting NovelCat web app..." -ForegroundColor Green
 }
 
 if (-not $KeepRunning -and -not $InstallOnly) {
@@ -381,13 +394,14 @@ else {
 
 if ($InstallOnly) {
     Write-Host ""
-    Write-Host "Novel IDE dependencies are ready." -ForegroundColor Green
+    Write-Host "NovelCat dependencies are ready." -ForegroundColor Green
     Write-Host "Run start-web.cmd to open the app."
     return
 }
 
 $FrontendPort = Select-AvailablePort $FrontendPortCandidates
 $FrontendUrl = "http://127.0.0.1:$FrontendPort"
+$OpenUrl = if (Get-EnvFlag $BackendEnv "AUTH_REQUIRED") { "$FrontendUrl/login" } else { $FrontendUrl }
 Set-Content -Path (Join-Path $RunDir "frontend.port") -Value $FrontendPort -Encoding ascii
 Set-Content -Path (Join-Path $RunDir "backend.port") -Value $BackendPort -Encoding ascii
 
@@ -428,12 +442,15 @@ else {
 Wait-HttpReady $FrontendUrl 120
 
 if (-not $NoBrowser) {
-    Open-AppBrowser $FrontendUrl
+    Open-AppBrowser $OpenUrl
 }
 
 Write-Host ""
-Write-Host "Novel IDE is ready." -ForegroundColor Green
+Write-Host "NovelCat is ready." -ForegroundColor Green
 Write-Host "App:     $FrontendUrl"
+if ($OpenUrl -ne $FrontendUrl) {
+    Write-Host "Login:   $OpenUrl"
+}
 Write-Host "Backend: $BackendHealthUrl"
 Write-Host "Logs:    $LogDir"
 Write-Host ""

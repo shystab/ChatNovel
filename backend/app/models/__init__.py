@@ -16,6 +16,7 @@ from .knowledge import (
     KnowledgeSearchResponse,
 )
 from .finetune import FineTunePrepareRequest, FineTunePrepareResponse
+from .auth import User, InviteCode, AuthUser, AuthResponse
 
 __all__ = [
     "Chapter", "ChapterCreate", "ChapterUpdate", "ChapterRead",
@@ -25,4 +26,5 @@ __all__ = [
     "KnowledgeDocument", "KnowledgeChunk",
     "KnowledgeUploadRequest", "KnowledgeUploadResponse", "KnowledgeSearchResponse",
     "FineTunePrepareRequest", "FineTunePrepareResponse",
+    "User", "InviteCode", "AuthUser", "AuthResponse",
 ]

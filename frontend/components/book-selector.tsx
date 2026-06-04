@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Book, BookCreate } from "@/types/api";
+import { Book } from "@/types/api";
 import { api } from "@/lib/api";
 import { BookOpen, Plus, Trash2, ChevronDown, Check, X } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
@@ -58,8 +58,7 @@ export default function BookSelector({
     try {
       const book = await api.createBook({
         title,
-        user_id: "default_user",
-      } as BookCreate);
+      });
       const updated = [...books, book];
       onBooksChange(updated);
       onSwitch(book.id);

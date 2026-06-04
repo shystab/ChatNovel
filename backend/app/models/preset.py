@@ -7,6 +7,7 @@ from sqlmodel import Field, SQLModel
 
 
 class PresetBase(SQLModel):
+    user_id: Annotated[str, Field(default="default_user", index=True, description="用户ID")]
     name: Annotated[str, Field(index=True, description="预设名称")]
     description: Annotated[str, Field(default="", description="预设描述（可选）")]
     system_prompt: Annotated[str, Field(description="System Prompt 内容")]
@@ -22,6 +23,7 @@ class Preset(PresetBase, table=True):
 
 
 class PresetCreate(SQLModel):
+    user_id: str = "default_user"
     name: str
     description: str = ""
     system_prompt: str

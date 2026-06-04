@@ -75,6 +75,7 @@ def _migrate_columns(session: Session) -> None:
     _add_column_if_missing(session, "chapter", "summary", "TEXT DEFAULT ''")
 
     _add_column_if_missing(session, "setting", "ai_provider", "VARCHAR DEFAULT 'deepseek'")
+    _add_column_if_missing(session, "setting", "user_id", "VARCHAR DEFAULT 'default_user'")
     _add_column_if_missing(session, "setting", "temperature", "FLOAT DEFAULT 0.7")
     _add_column_if_missing(session, "setting", "max_tokens", "INTEGER DEFAULT 2000")
     _add_column_if_missing(session, "setting", "deepseek_api_key_enc", "VARCHAR")
@@ -95,6 +96,7 @@ def _migrate_columns(session: Session) -> None:
     _add_column_if_missing(session, "setting", "external_rag_weight", "INTEGER DEFAULT 30")
 
     _add_column_if_missing(session, "conversation", "selected_doc_ids", "JSON DEFAULT '[]'")
+    _add_column_if_missing(session, "preset", "user_id", "VARCHAR DEFAULT 'default_user'")
 
 
 def _ensure_default_book(session: Session) -> int:

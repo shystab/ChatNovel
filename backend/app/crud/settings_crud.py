@@ -7,7 +7,7 @@ from app.models.setting import Setting, SettingUpdate
 from app.core.security import encrypt_api_key
 
 
-def get_settings(session: Session) -> Setting | None:
+def get_settings(session: Session, user_id: str = "default_user") -> Setting | None:
     """
     获取设置
     
@@ -20,7 +20,7 @@ def get_settings(session: Session) -> Setting | None:
         - None：如果不存在
     """
     # 查询数据库中的第一条设置记录
-    statement = select(Setting)
+    statement = select(Setting).where(Setting.user_id == user_id)
     try:
         return session.exec(statement).first()
     except OperationalError:
@@ -30,7 +30,7 @@ def get_settings(session: Session) -> Setting | None:
         return session.exec(statement).first()
 
 
-def update_settings(session: Session, settings_data: SettingUpdate) -> Setting:
+def update_settings(session: Session, settings_data: SettingUpdate, user_id: str = "default_user") -> Setting:
     """
     更新设置
     
@@ -46,7 +46,7 @@ def update_settings(session: Session, settings_data: SettingUpdate) -> Setting:
         - 更新后的 Setting 对象
     """
     # 查询当前设置
-    db_settings = get_settings(session)
+    db_settings = get_settings(session, user_id=user_id)
     
     # 处理 API Key 加密
     update_data = settings_data.model_dump(exclude_unset=True)
@@ -80,6 +80,7 @@ def update_settings(session: Session, settings_data: SettingUpdate) -> Setting:
     else:
         # 不存在则创建新记录
         db_settings = Setting(
+            user_id=user_id,
             theme=update_data.get("theme", "light"),
             font_size=update_data.get("font_size", 16),
             auto_save_interval=update_data.get("auto_save_interval", 30),

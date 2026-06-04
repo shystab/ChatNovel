@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Check, Edit2, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import ConfirmDialog from "@/components/confirm-dialog";
+import { authHeaders } from "@/lib/api";
 
 interface Preset {
   id: number;
@@ -59,7 +60,7 @@ export default function PersonaManager() {
 
   const loadPresets = useCallback(async () => {
     try {
-      const res = await fetch(`${BASE}/presets/`);
+      const res = await fetch(`${BASE}/presets/`, { headers: authHeaders() });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -95,7 +96,7 @@ export default function PersonaManager() {
       const isEditing = editingId !== null;
       const res = await fetch(`${BASE}/presets/${isEditing ? editingId : ""}`, {
         method: isEditing ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(formData),
       });
 
@@ -115,7 +116,10 @@ export default function PersonaManager() {
 
   const handleToggle = async (id: number) => {
     try {
-      const res = await fetch(`${BASE}/presets/${id}/toggle`, { method: "PATCH" });
+      const res = await fetch(`${BASE}/presets/${id}/toggle`, {
+        method: "PATCH",
+        headers: authHeaders(),
+      });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -132,7 +136,10 @@ export default function PersonaManager() {
     setDeleting(true);
     setError(null);
     try {
-      const res = await fetch(`${BASE}/presets/${deleteTarget.id}`, { method: "DELETE" });
+      const res = await fetch(`${BASE}/presets/${deleteTarget.id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }

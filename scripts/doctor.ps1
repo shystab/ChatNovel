@@ -80,7 +80,7 @@ function Test-Port {
 }
 
 Write-Host ""
-Write-Host "Novel IDE environment check" -ForegroundColor Cyan
+Write-Host "NovelCat environment check" -ForegroundColor Cyan
 Write-Host ""
 
 if (Test-Path $BackendPython) {

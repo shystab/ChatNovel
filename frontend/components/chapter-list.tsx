@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import { Chapter } from "@/types/api";
-import { api } from "@/lib/api";
+import { api, authHeaders, withAccessToken } from "@/lib/api";
 import { ArrowDown, ArrowUp, Download, Plus, Search, Settings, Trash2, Pencil, Check, X, PanelLeftClose, FileText } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
 import ConfirmDialog from "@/components/confirm-dialog";
@@ -125,7 +126,7 @@ function ExportModal({ bookId, chapters, onClose, theme }: ExportModalProps) {
     const ids = Array.from(selected).join(",");
     if (!ids) return;
     const path = bookId ? `books/${bookId}/export/${fmt}` : `chapters/export/${fmt}`;
-    window.location.href = `${BASE}/${path}?ids=${ids}`;
+    window.location.href = withAccessToken(`${BASE}/${path}?ids=${ids}`);
     onClose();
   };
 
@@ -134,7 +135,10 @@ function ExportModal({ bookId, chapters, onClose, theme }: ExportModalProps) {
     const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     setSyncStatus("同步中...");
     try {
-      const res = await fetch(`${BASE}/books/${bookId}/workspace/sync`, { method: "POST" });
+      const res = await fetch(`${BASE}/books/${bookId}/workspace/sync`, {
+        method: "POST",
+        headers: authHeaders(),
+      });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setSyncStatus(`已同步 ${data.chapter_count ?? 0} 章到作品文件夹`);
@@ -404,8 +408,8 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
       {/* 顶部品牌栏 */}
       <div className={`px-4 py-3 border-b ${borderClass} flex justify-between items-center ${cardBgClass} shrink-0`}>
         <div className="flex items-center space-x-2">
-          <div className={`w-6 h-6 ${theme === 'dark' ? 'bg-slate-700' : theme === 'sepia' ? 'bg-amber-800' : 'bg-slate-900'} rounded-md flex items-center justify-center text-white font-black text-[10px]`}>V</div>
-          <span className={`font-bold ${headingClass} text-sm tracking-tight`}>VibeWriter</span>
+          <Image src="/icon.svg" alt="" width={24} height={24} className="rounded-md shadow-sm" priority />
+          <span className={`font-bold ${headingClass} text-sm tracking-tight`}>NovelCat</span>
         </div>
         <div className="flex items-center space-x-1">
           <button

@@ -13,19 +13,82 @@ import {
   Settings,
   SettingsUpdate,
   KnowledgeBase,
+  KnowledgeHealth,
+  KnowledgeReindexResult,
   Persona,
   PersonaCreate,
   PersonaUpdate,
+  AuthResponse,
+  AuthUser,
+  InviteCode,
 } from "@/types/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+const ACCESS_TOKEN = process.env.NEXT_PUBLIC_APP_ACCESS_TOKEN || "";
 
 const USER_ID = "default_user";
 const PROJECT_ID = "default_project";
+const AUTH_TOKEN_KEY = "chatnovel-auth-token";
+const AUTH_USER_KEY = "chatnovel-auth-user";
+
+export function getAuthToken() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+}
+
+export function setAuthSession(auth: AuthResponse) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTH_TOKEN_KEY, auth.access_token);
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(auth.user));
+}
+
+export function clearAuthSession() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+}
+
+export function getStoredUser(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(AUTH_USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as AuthUser;
+  } catch {
+    return null;
+  }
+}
+
+export function withAccessToken(url: string) {
+  const parsed = new URL(url, window.location.origin);
+  if (ACCESS_TOKEN) parsed.searchParams.set("access_token", ACCESS_TOKEN);
+  const authToken = getAuthToken();
+  if (authToken) parsed.searchParams.set("auth_token", authToken);
+  return parsed.toString();
+}
+
+export function authHeaders(headers?: HeadersInit): HeadersInit {
+  const authToken = getAuthToken();
+  return {
+    ...(headers || {}),
+    ...(ACCESS_TOKEN ? { "X-App-Token": ACCESS_TOKEN } : {}),
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  };
+}
 
 async function req<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, init);
+  const res = await fetch(input, {
+    ...init,
+    headers: authHeaders(init?.headers),
+  });
   if (!res.ok) {
+    const inputText = typeof input === "string" ? input : input.toString();
+    const isAuthEndpoint = inputText.includes("/auth/login") || inputText.includes("/auth/register");
+    if (res.status === 401 && !isAuthEndpoint && typeof window !== "undefined") {
+      clearAuthSession();
+      const next = `${window.location.pathname}${window.location.search}`;
+      window.location.href = `/login?next=${encodeURIComponent(next)}`;
+    }
     const text = await res.text().catch(() => "");
     throw new Error(text || `HTTP ${res.status}`);
   }
@@ -43,6 +106,34 @@ function filenameFromDisposition(value: string | null, fallback: string) {
 }
 
 export const api = {
+  // ── Books ──────────────────────────────────────
+  login: async (username: string, password: string) => {
+    const auth = await req<AuthResponse>(`${BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    setAuthSession(auth);
+    return auth;
+  },
+  register: async (username: string, password: string, inviteCode?: string) => {
+    const auth = await req<AuthResponse>(`${BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, invite_code: inviteCode || null }),
+    });
+    setAuthSession(auth);
+    return auth;
+  },
+  me: () => req<AuthUser>(`${BASE}/auth/me`),
+  logout: () => clearAuthSession(),
+  createInvite: (maxUses: number = 1, expiresDays: number | null = 14) =>
+    req<InviteCode>(`${BASE}/auth/invites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ max_uses: maxUses, expires_days: expiresDays }),
+    }),
+
   // ── Books ──────────────────────────────────────
   listBooks: () => req<Book[]>(`${BASE}/books/`),
   getBook: (id: number) => req<Book>(`${BASE}/books/${id}`),
@@ -126,8 +217,8 @@ export const api = {
     }),
 
   // ── Export ────────────────────────────────────
-  exportTxt: () => { window.location.href = `${BASE}/chapters/export/txt`; },
-  exportDocx: () => { window.location.href = `${BASE}/chapters/export/docx`; },
+  exportTxt: () => { window.location.href = withAccessToken(`${BASE}/chapters/export/txt`); },
+  exportDocx: () => { window.location.href = withAccessToken(`${BASE}/chapters/export/docx`); },
 
   // ── Workspace ─────────────────────────────────
   syncWorkspaceLibrary: () =>
@@ -150,7 +241,10 @@ export const api = {
       updated_chapters: number;
     }>(`${BASE}/books/workspace/import`, { method: "POST" }),
   backupWorkspaceLibrary: async () => {
-    const res = await fetch(`${BASE}/books/workspace/backup`, { method: "POST" });
+    const res = await fetch(`${BASE}/books/workspace/backup`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(text || `HTTP ${res.status}`);
@@ -205,6 +299,10 @@ export const api = {
   getKnowledgeBases: () =>
     req<{items: KnowledgeBase[], total: number}>(`${BASE}/knowledge/documents?user_id=${USER_ID}&project_id=${PROJECT_ID}`)
       .then(res => res.items),
+  getKnowledgeHealth: () =>
+    req<KnowledgeHealth>(`${BASE}/knowledge/health`),
+  reindexKnowledge: () =>
+    req<KnowledgeReindexResult>(`${BASE}/knowledge/reindex?project_id=${PROJECT_ID}`, { method: "POST" }),
 
   uploadKnowledgeBase: async (file: File) => {
     const text = await file.text();

@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import List
 
-from sqlmodel import Session
+from sqlmodel import Session, select, or_
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.services.ai_provider import BaseAIProvider, get_ai_provider
@@ -17,6 +17,9 @@ from app.crud.preset_crud import get_enabled_preset_new
 from app.crud.crud import get_chapter, get_chapters_by_book
 from app.crud.crud import get_nearby_chapter_summaries
 from app.models.ai import AgentEditOperation, AgentEditPlan
+from app.models.books import Book
+from app.models.chapters import Chapter
+from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
 
 # ──────────────────────────────────────────────
 # 内置 System Prompt（写作人格）
@@ -106,7 +109,7 @@ WRITING_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_my_chapters",
-            "description": "在自己的小说全书中语义检索相关片段。适合查人物、设定、伏笔、事件、前后矛盾。",
+            "description": "在自己的小说全书中检索相关片段。这属于内部写作上下文，不是外部语料 RAG。适合查人物、设定、伏笔、事件、前后矛盾。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -169,9 +172,10 @@ WRITING_TOOLS = [
 
 
 class AIService:
-    def __init__(self, provider: BaseAIProvider, session: Session | None = None):
+    def __init__(self, provider: BaseAIProvider, session: Session | None = None, user_id: str = "default_user"):
         self.provider = provider
         self.session = session
+        self.user_id = user_id
 
     # ──────────────────────────────────────────────
     # 辅助方法
@@ -187,7 +191,7 @@ class AIService:
             return DEFAULT_WRITER_PERSONA
 
         # 尝试从全局预设系统获取（preset_crud）
-        global_preset = get_enabled_preset_new(self.session)
+        global_preset = get_enabled_preset_new(self.session, user_id=user_id)
         if global_preset and global_preset.system_prompt.strip():
             logger.debug("Using global preset id=%s", global_preset.id)
             return global_preset.system_prompt.strip()
@@ -212,7 +216,7 @@ class AIService:
         config = {"temperature": 0.7, "max_tokens": 1000}
         if self.session:
             from app.crud.settings_crud import get_settings
-            db_settings = get_settings(self.session)
+            db_settings = get_settings(self.session, user_id=self.user_id)
             if db_settings:
                 config["temperature"] = db_settings.temperature if db_settings.temperature is not None else config["temperature"]
                 config["max_tokens"] = db_settings.max_tokens or config["max_tokens"]
@@ -224,7 +228,7 @@ class AIService:
         config = {"style": "concise"}
         if self.session:
             from app.crud.settings_crud import get_settings
-            db_settings = get_settings(self.session)
+            db_settings = get_settings(self.session, user_id=self.user_id)
             if db_settings and db_settings.summary_generation_style:
                 config["style"] = db_settings.summary_generation_style
         return config
@@ -238,7 +242,7 @@ class AIService:
         }
         if self.session:
             from app.crud.settings_crud import get_settings
-            db_settings = get_settings(self.session)
+            db_settings = get_settings(self.session, user_id=self.user_id)
             if db_settings:
                 config["current_chapter_chars"] = max(500, min(db_settings.current_chapter_chars or 1800, 6000))
                 config["chat_use_chapter_rag"] = bool(db_settings.chat_use_chapter_rag)
@@ -521,7 +525,7 @@ class AIService:
         return "附近章节摘要：\n" + "\n".join(lines)
 
     def search_my_chapters(self, query: str, user_id: str, book_id: int | None, top_k: int = 5) -> str:
-        """全书章节检索"""
+        """全书章节检索：内部写作上下文，不属于外部语料 RAG。"""
         if not book_id:
             return "当前没有可检索的书籍上下文。"
         query = (query or "").strip()
@@ -535,6 +539,8 @@ class AIService:
             query=query,
             top_k=top_k
         )
+        if not hits:
+            hits = self._keyword_search_chapters(user_id=user_id, book_id=book_id, query=query, top_k=top_k)
         if not hits:
             return f"未找到与“{query}”相关的章节内容。"
         lines = [f"全书检索结果（相关片段）："]
@@ -552,7 +558,7 @@ class AIService:
         purpose: str = "reference",
         top_k: int = 5,
     ) -> str:
-        """外部参考章节检索"""
+        """外部参考语料检索：这部分才是 RAG。"""
         query = (query or "").strip()
         if not query:
             return "没有提供检索关键词。"
@@ -565,6 +571,8 @@ class AIService:
         }
         label = purpose_labels.get(purpose, purpose_labels["reference"])
         ks = get_knowledge_service()
+        if not ks.vector_enabled:
+            return "外部语料向量模型未就绪，无法进行外部 RAG 检索。请先开启并加载 embedding 模型。"
         hits = ks.search_external(
             user_id=user_id,
             project_id=project_id,
@@ -581,6 +589,34 @@ class AIService:
             source = self._hit_label(h, f"资料{i}")
             lines.append(f"[{i} | {source}] {self._clip_text(h.get('text', ''), 700)}")
         return "\n".join(lines)
+
+    def _keyword_search_chapters(self, *, user_id: str, book_id: int, query: str, top_k: int) -> list[dict]:
+        if not self.session:
+            return []
+        terms = [term for term in re.split(r"\s+", query.strip()) if term][:4]
+        if not terms:
+            return []
+        stmt = (
+            select(Chapter)
+            .join(Book, Book.id == Chapter.book_id)
+            .where(Book.user_id == user_id)
+            .where(Chapter.book_id == book_id)
+        )
+        term_filters = []
+        for term in terms:
+            term_filters.append(Chapter.title.contains(term))  # type: ignore[attr-defined]
+            term_filters.append(Chapter.summary.contains(term))  # type: ignore[attr-defined]
+            term_filters.append(Chapter.content.contains(term))  # type: ignore[attr-defined]
+        stmt = stmt.where(or_(*term_filters)).order_by(Chapter.order).limit(top_k)
+        chapters = list(self.session.exec(stmt).all())
+        return [
+            {
+                "text": self._plain_text(chapter.summary or chapter.content),
+                "meta": {"chapter_id": chapter.id, "chapter_title": chapter.title, "source_type": "keyword"},
+                "distance": 0,
+            }
+            for chapter in chapters
+        ]
 
     def get_style_examples(
         self,
@@ -1065,10 +1101,10 @@ class AIService:
         )
 
     # ──────────────────────────────────────────────
-    # 其他写作辅助能力：RAG 上下文、轻量分析、续写、摘要和分层记忆。
+    # 其他写作辅助能力：外部语料检索、轻量分析、续写、摘要和分层记忆。
     # ──────────────────────────────────────────────
     # ──────────────────────────────────────────────
-    # 统一 RAG 上下文（区分外部知识库和全书章节）
+    # 统一检索上下文：外部知识库属于 RAG，全书章节属于内部写作上下文。
     # ──────────────────────────────────────────────
     def build_unified_rag_context(
         self,
@@ -1083,7 +1119,7 @@ class AIService:
         selected_doc_ids: list[int] | None = None,
         snippet_chars: int = 650,
     ) -> str:
-        """构建统一 RAG 上下文，区分外部知识库和全书章节"""
+        """构建统一检索上下文：外部知识库属于 RAG，全书章节属于内部写作上下文。"""
         if not query:
             return ""
 
@@ -1093,24 +1129,27 @@ class AIService:
 
         # 1. 外部知识库检索
         if use_external:
-            try:
-                ext_hits = ks.search_external(
-                    user_id=user_id,
-                    project_id=project_id,
-                    query=query,
-                    top_k=top_k,
-                    weight=external_weight,
-                    document_ids=selected_doc_ids,
-                )
-            except Exception as exc:
-                logger.warning("External RAG context failed: %s", exc)
-                ext_hits = []
-            if ext_hits:
-                label = "选中语料参考" if selected_doc_ids else "外部语料参考"
-                lines.append(f"【{label}（严禁直接复制原文，仅可借鉴风格、用词和设定）】")
-                for i, h in enumerate(ext_hits, start=1):
-                    source = self._hit_label(h, f"资料{i}")
-                    lines.append(f"[外{i} | {source}] {self._clip_text(h.get('text', ''), snippet_chars)}")
+            if not ks.vector_enabled:
+                lines.append("【外部语料】向量模型未就绪，本次不会使用外部资料。")
+            else:
+                try:
+                    ext_hits = ks.search_external(
+                        user_id=user_id,
+                        project_id=project_id,
+                        query=query,
+                        top_k=top_k,
+                        weight=external_weight,
+                        document_ids=selected_doc_ids,
+                    )
+                except Exception as exc:
+                    logger.warning("External RAG context failed: %s", exc)
+                    ext_hits = []
+                if ext_hits:
+                    label = "选中语料参考" if selected_doc_ids else "外部语料参考"
+                    lines.append(f"【{label}（严禁直接复制原文，仅可借鉴风格、用词和设定）】")
+                    for i, h in enumerate(ext_hits, start=1):
+                        source = self._hit_label(h, f"资料{i}")
+                        lines.append(f"[外{i} | {source}] {self._clip_text(h.get('text', ''), snippet_chars)}")
 
         # 2. 全书章节检索
         if use_chapters and book_id:
@@ -1129,6 +1168,18 @@ class AIService:
                 for i, h in enumerate(chapter_hits, start=1):
                     source = self._hit_label(h, f"章节{i}")
                     lines.append(f"[章{i} | {source}] {self._clip_text(h.get('text', ''), snippet_chars)}")
+            else:
+                fallback_hits = self._keyword_search_chapters(
+                    user_id=user_id,
+                    book_id=book_id,
+                    query=query,
+                    top_k=top_k,
+                )
+                if fallback_hits:
+                    lines.append("【全书关键词回顾（可引用其中内容保持连贯性）】")
+                    for i, h in enumerate(fallback_hits, start=1):
+                        source = self._hit_label(h, f"章节{i}")
+                        lines.append(f"[章{i} | {source}] {self._clip_text(h.get('text', ''), snippet_chars)}")
 
         return "\n".join(lines) if lines else ""
 
@@ -1357,7 +1408,7 @@ class AIService:
             if outline and "当前没有可用" not in outline and "还没有章节" not in outline:
                 parts.append("【第3层：全书摘要索引】\n" + outline)
 
-        # 4. RAG检索（知识库） - 统一处理外部知识库和全书章节
+        # 4. 检索补充：外部知识库是 RAG，全书章节是内部写作上下文检索。
         rag_query = (query or current_plain).strip()
         if use_rag and rag_query:
             external_enabled = use_external_rag if use_rag else False
@@ -1376,7 +1427,7 @@ class AIService:
                     selected_doc_ids=selected_doc_ids,
                 )
                 if rag_context:
-                    parts.append("【第4层：语义检索补充】\n" + rag_context)
+                    parts.append("【第4层：检索补充】\n" + rag_context)
 
         # 5. 轻量伏笔扫描（规则辅助，不替代 AI 判断）
         if use_foreshadowing_scan:
@@ -1401,6 +1452,6 @@ class AIService:
         return f"【{context_title}】\n" + "\n\n".join(parts)
 
 
-def get_ai_service(session: Session | None = None) -> AIService:
-    provider = get_ai_provider(session=session)
-    return AIService(provider=provider, session=session)
+def get_ai_service(session: Session | None = None, user_id: str = "default_user") -> AIService:
+    provider = get_ai_provider(session=session, user_id=user_id)
+    return AIService(provider=provider, session=session, user_id=user_id)

@@ -1,6 +1,6 @@
-# Novel IDE Frontend
+# NovelCat Frontend
 
-Next.js frontend for the Novel IDE writing app.
+Next.js frontend for the NovelCat writing app.
 
 ## Development
 

@@ -8,6 +8,14 @@
 git switch -c codex/server-web
 ```
 
+当前实验分支也可以使用：
+
+```cmd
+git checkout -b server
+```
+
+第一阶段部署步骤见：[Server Web Alpha 部署说明](server-deploy-alpha.md)。
+
 ## 目标定位
 
 第一阶段不是高并发商业产品，而是少量用户可访问的 Web Alpha。
@@ -33,29 +41,34 @@ git switch -c codex/server-web
 
 目标：自己和少量朋友通过网址使用。
 
-需要完成：
+已经完成的 Alpha 基线：
 
-- 增加最简单的访问保护，例如邀请码、单用户密码或 Basic Auth。
+- 邀请制账号：第一个用户自动成为管理员，后续用户用邀请码注册。
+- 用户登录、退出和管理员生成邀请码。
+- 书籍、章节、对话、设置、人格预设、知识库按登录用户隔离。
+- 外部语料上传、列表、删除、关键词检索。
+- 服务器轻量依赖：默认关闭本地 embedding。
+
+后续仍要继续完善：
+
 - 明确生产环境配置，拆分 `.env.example`。
 - 后端使用 `0.0.0.0` 监听，由 Nginx/Caddy 反代。
 - 配置 HTTPS。
-- 关闭或弱化本地 embedding/RAG 默认依赖。
 - AI 先只调用 DeepSeek/OpenAI 兼容 API。
 - 数据库可以先 SQLite，但必须有备份脚本。
 
-## 第二阶段：多用户 Alpha
+## 第二阶段：多用户 Alpha 加固
 
-目标：不同用户的数据互相隔离。
+目标：在已有用户隔离基础上，让少量朋友长期使用更稳。
 
 必须改造：
 
-- 去掉 `default_user` / `default_project` 写死逻辑。
-- 增加用户注册、登录、会话或 Token。
-- `book`、`chapter`、`conversation`、`setting`、`knowledge`、`persona` 全部绑定真实用户。
-- 所有 API 按当前登录用户过滤数据。
-- API Key 按用户加密保存。
+- 去掉剩余 `default_project` 占位逻辑，把知识库和书籍项目关系做实。
 - 增加基础限流，防止 AI API 被刷。
 - 增加日志和错误监控。
+- 增加自动备份脚本。
+- 给管理员补简单用户管理视图。
+- 用正式迁移工具替代手写启动迁移。
 
 ## 第三阶段：产品化部署
 
@@ -71,16 +84,24 @@ git switch -c codex/server-web
 - 增加定时备份。
 - 增加管理员视图或管理命令。
 
-## RAG 与搜索策略
+## 分层记忆与 RAG 策略
 
 服务器版不要默认本地跑重 embedding。
 
-推荐顺序：
+先区分：
+
+- 分层记忆：当前章节、附近章节摘要、全书内部检索。
+- 内部 RAG：全书章节检索、章节关键词/语义检索。
+- 外部语料 RAG：用户上传的外部参考文档/语料检索。
+
+外部语料 RAG 推荐顺序：
 
 1. 先做数据库关键词搜索。
 2. 再做 PostgreSQL full-text search 或 SQLite FTS。
 3. 需要语义检索时，优先使用云端 embedding API。
 4. 本地 embedding 只做可选后台任务，不要阻塞主请求。
+
+全书检索可以作为分层记忆的一层，也可以广义叫内部 RAG；产品和文档里要把它和“上传文档的外部语料 RAG”分开讲。
 
 ## 和桌面 Lite 的关系
 

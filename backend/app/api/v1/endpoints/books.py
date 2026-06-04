@@ -9,6 +9,7 @@ from sqlmodel import Session, select, func
 from typing import Annotated, List
 
 from app.db.session import get_session
+from app.core.auth import CurrentUser, get_current_user
 from app.crud import book_crud
 from app.crud.crud import get_chapters_by_book, get_chapter, create_chapter, update_chapter, delete_chapter
 from app.models.books import Book, BookCreate, BookRead, BookUpdate
@@ -32,10 +33,12 @@ from app.services.workspace_service import (
 router = APIRouter(responses={404: {"description": "Not found"}})
 
 
-def _get_book_or_404(book_id: int, session: Session) -> None:
+def _get_book_or_404(book_id: int, session: Session, user_id: str) -> Book:
     """验证书籍存在，不存在则抛 404"""
-    if not book_crud.get_book(session, book_id):
+    book = book_crud.get_book(session, book_id, user_id=user_id)
+    if not book:
         raise HTTPException(status_code=404, detail="Book not found")
+    return book
 
 
 def _build_book_read(book, session: Session) -> BookRead:
@@ -84,8 +87,8 @@ def _attachment_filename(book, suffix: str) -> str:
     return f"{safe_filename(book.title, 'novel')}.{suffix}"
 
 
-def _library_items(session: Session) -> list[tuple]:
-    books = book_crud.get_books(session, limit=1000)
+def _library_items(session: Session, user_id: str) -> list[tuple]:
+    books = book_crud.get_books(session, limit=1000, user_id=user_id)
     return [
         (book, get_chapters_by_book(session, book.id, limit=5000))
         for book in books
@@ -93,8 +96,8 @@ def _library_items(session: Session) -> list[tuple]:
     ]
 
 
-def _find_import_book(session: Session, title: str):
-    return session.exec(select(Book).where(Book.title == title)).first()
+def _find_import_book(session: Session, title: str, user_id: str):
+    return session.exec(select(Book).where(Book.title == title).where(Book.user_id == user_id)).first()
 
 
 def _find_import_chapter(session: Session, book_id: int, chapter_data: dict) -> Chapter | None:
@@ -111,7 +114,7 @@ def _find_import_chapter(session: Session, book_id: int, chapter_data: dict) -> 
     ).first()
 
 
-def _import_workspace_library(session: Session) -> dict:
+def _import_workspace_library(session: Session, user_id: str) -> dict:
     scan = scan_library_workspace()
     created_books = 0
     updated_books = 0
@@ -120,17 +123,17 @@ def _import_workspace_library(session: Session) -> dict:
 
     for scanned_book in scan["books"]:
         data = read_workspace_book(scanned_book["folder"])
-        book = _find_import_book(session, data["title"])
+        book = _find_import_book(session, data["title"], user_id)
         if book:
             book.title = data["title"]
             book.description = data.get("description")
-            book.user_id = data.get("user_id") or book.user_id
+            book.user_id = user_id
             updated_books += 1
         else:
             book = book_crud.create_book(session, BookCreate(
                 title=data["title"],
                 description=data.get("description"),
-                user_id=data.get("user_id") or "default_user",
+                user_id=user_id,
             ))
             created_books += 1
 
@@ -173,10 +176,11 @@ def _import_workspace_library(session: Session) -> dict:
 @router.get("/", response_model=List[BookRead], summary="获取书籍列表")
 def list_books(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
 ):
-    books = book_crud.get_books(session, skip=skip, limit=limit)
+    books = book_crud.get_books(session, skip=skip, limit=limit, user_id=current_user.username)
     return [_build_book_read(b, session) for b in books]
 
 
@@ -189,7 +193,9 @@ def list_books(
 def create_book(
     book_in: Annotated[BookCreate, Body()],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
+    book_in.user_id = current_user.username
     book = book_crud.create_book(session, book_in)
     write_project_manifest(book)
     return _build_book_read(book, session)
@@ -199,8 +205,9 @@ def create_book(
 def get_book(
     book_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    book = book_crud.get_book(session, book_id)
+    book = book_crud.get_book(session, book_id, user_id=current_user.username)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     return _build_book_read(book, session)
@@ -211,8 +218,9 @@ def update_book(
     book_id: Annotated[int, Path(ge=1)],
     book_in: Annotated[BookUpdate, Body()],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    book = book_crud.get_book(session, book_id)
+    book = book_crud.get_book(session, book_id, user_id=current_user.username)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     book = book_crud.update_book(session, book, book_in)
@@ -228,8 +236,9 @@ def update_book(
 def delete_book(
     book_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    book = book_crud.get_book(session, book_id)
+    book = book_crud.get_book(session, book_id, user_id=current_user.username)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     book_crud.delete_book(session, book)
@@ -238,15 +247,17 @@ def delete_book(
 @router.post("/workspace/sync", summary="同步全部作品到作品文件夹")
 def sync_library_to_workspace(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    return sync_library_workspace(_library_items(session))
+    return sync_library_workspace(_library_items(session, current_user.username))
 
 
 @router.post("/workspace/backup", summary="备份数据库和作品文件夹")
 def backup_workspace(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    sync_library_workspace(_library_items(session))
+    sync_library_workspace(_library_items(session, current_user.username))
     filename, output = build_workspace_backup()
     return StreamingResponse(
         output,
@@ -263,9 +274,10 @@ def scan_workspace():
 @router.post("/workspace/import", summary="从作品文件夹导入到数据库")
 def import_workspace(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    result = _import_workspace_library(session)
-    sync_library_workspace(_library_items(session))
+    result = _import_workspace_library(session, current_user.username)
+    sync_library_workspace(_library_items(session, current_user.username))
     return result
 
 
@@ -275,9 +287,10 @@ def import_workspace(
 def export_book_txt(
     book_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
 ):
-    book = book_crud.get_book(session, book_id)
+    book = book_crud.get_book(session, book_id, user_id=current_user.username)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     chapters = _export_chapters_for_book(session, book_id, ids)
@@ -296,9 +309,10 @@ def export_book_txt(
 def export_book_docx(
     book_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
 ):
-    book = book_crud.get_book(session, book_id)
+    book = book_crud.get_book(session, book_id, user_id=current_user.username)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     chapters = _export_chapters_for_book(session, book_id, ids)
@@ -316,8 +330,9 @@ def export_book_docx(
 def sync_book_to_workspace(
     book_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    book = book_crud.get_book(session, book_id)
+    book = book_crud.get_book(session, book_id, user_id=current_user.username)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     chapters = get_chapters_by_book(session, book_id, limit=5000)
@@ -332,10 +347,11 @@ def sync_book_to_workspace(
 def list_chapters(
     book_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ):
-    _get_book_or_404(book_id, session)
+    _get_book_or_404(book_id, session, current_user.username)
     return get_chapters_by_book(session, book_id, offset=offset, limit=limit)
 
 
@@ -349,8 +365,9 @@ def create_chapter_in_book(
     book_id: Annotated[int, Path(ge=1)],
     chapter_in: Annotated[ChapterCreate, Body()],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    _get_book_or_404(book_id, session)
+    _get_book_or_404(book_id, session, current_user.username)
     # book_id 从 URL 注入，覆盖 body 里的值
     chapter_in.book_id = book_id
     chapter = create_chapter(session, chapter_in)
@@ -367,7 +384,9 @@ def get_chapter_in_book(
     book_id: Annotated[int, Path(ge=1)],
     chapter_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
+    _get_book_or_404(book_id, session, current_user.username)
     chapter = get_chapter(session, chapter_id, book_id=book_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
@@ -384,7 +403,9 @@ def update_chapter_in_book(
     chapter_id: Annotated[int, Path(ge=1)],
     chapter_in: Annotated[ChapterUpdate, Body()],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
+    _get_book_or_404(book_id, session, current_user.username)
     chapter = get_chapter(session, chapter_id, book_id=book_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
@@ -402,7 +423,9 @@ def delete_chapter_in_book(
     book_id: Annotated[int, Path(ge=1)],
     chapter_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
+    _get_book_or_404(book_id, session, current_user.username)
     chapter = get_chapter(session, chapter_id, book_id=book_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")

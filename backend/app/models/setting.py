@@ -7,6 +7,7 @@ from typing import Annotated
 
 class SettingBase(SQLModel):
     """基础设置模型 - 定义所有设置字段"""
+    user_id: Annotated[str, Field(default="default_user", index=True, description="用户ID")]
     theme: Annotated[str, Field(default="light", description="主题：light(浅色) / dark(深色)")]  # 主题：light(浅色) / dark(深色)
     font_size: Annotated[int, Field(default=16, description="字体大小")]  # 字体大小
     auto_save_interval: Annotated[int, Field(default=30, description="自动保存间隔（秒）")]  # 自动保存间隔（秒）
@@ -29,9 +30,9 @@ class SettingBase(SQLModel):
     nearby_chapter_count: Annotated[int, Field(default=3, ge=1, le=5, description="附近章节数量（前后总计）")]
     inject_nearby_summaries: Annotated[bool, Field(default=True, description="是否注入附近章节摘要")]
     inject_chapter_rag: Annotated[bool, Field(default=True, description="是否注入全书检索结果")]
-    # RAG行为配置
-    suggest_use_external_rag: Annotated[bool, Field(default=False, description="续写时默认使用外部知识库")]
-    chat_use_chapter_rag: Annotated[bool, Field(default=True, description="对话中自动检索全书")]
+    # 检索行为配置：external 是外部语料 RAG，chapter 是内部全书检索
+    suggest_use_external_rag: Annotated[bool, Field(default=False, description="续写时默认使用外部语料 RAG")]
+    chat_use_chapter_rag: Annotated[bool, Field(default=True, description="对话中自动检索自己的全书章节")]
     external_rag_weight: Annotated[int, Field(default=30, ge=0, le=100, description="外部知识库权重（0-100）")]
 
 
@@ -68,8 +69,8 @@ class SettingUpdate(SQLModel):
     nearby_chapter_count: Annotated[int | None, Field(default=None, ge=1, le=5, description="附近章节数量（前后总计）")]
     inject_nearby_summaries: Annotated[bool | None, Field(default=None, description="是否注入附近章节摘要")]
     inject_chapter_rag: Annotated[bool | None, Field(default=None, description="是否注入全书检索结果")]
-    suggest_use_external_rag: Annotated[bool | None, Field(default=None, description="续写时默认使用外部知识库")]
-    chat_use_chapter_rag: Annotated[bool | None, Field(default=None, description="对话中自动检索全书")]
+    suggest_use_external_rag: Annotated[bool | None, Field(default=None, description="续写时默认使用外部语料 RAG")]
+    chat_use_chapter_rag: Annotated[bool | None, Field(default=None, description="对话中自动检索自己的全书章节")]
     external_rag_weight: Annotated[int | None, Field(default=None, ge=0, le=100, description="外部知识库权重（0-100）")]
 
 

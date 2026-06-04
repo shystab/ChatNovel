@@ -8,10 +8,12 @@ from typing import Annotated, List
 import io
 
 from app.db.session import get_session
-from app.models.chapters import ChapterCreate, ChapterUpdate, ChapterRead
+from app.models.chapters import Chapter, ChapterCreate, ChapterUpdate, ChapterRead
 from app.crud.crud import get_chapter, get_chapters, get_chapters_by_ids, create_chapter, update_chapter, delete_chapter, get_nearby_chapter_summaries
 from app.services.ai_service import get_ai_service
 from app.crud.settings_crud import get_settings
+from app.models.books import Book
+from app.core.auth import CurrentUser, get_current_user
 from app.services.knowledge_service import get_knowledge_service, _chunk_text
 from app.services.workspace_service import build_docx_export, build_txt_export, delete_chapter_files, write_chapter_file
 
@@ -38,15 +40,20 @@ async def generate_chapter_summary_background(
             chapter = get_chapter(session, chapter_id)
             if not chapter:
                 return
+            user_id = "default_user"
+            if chapter.book_id:
+                book = session.get(Book, chapter.book_id)
+                if book:
+                    user_id = book.user_id
 
             # 1. 生成摘要（如果设置启用）
-            db_settings = get_settings(session)
+            db_settings = get_settings(session, user_id=user_id)
             if db_settings and db_settings.summary_auto_generate:
                 # 如果已有摘要且不强制重新生成，跳过
                 if not force_regenerate and chapter.summary and chapter.summary.strip():
                     pass  # 跳过摘要生成，但继续向量化
                 else:
-                    ai_service = get_ai_service(session)
+                    ai_service = get_ai_service(session, user_id=user_id)
                     summary_config = ai_service._get_summary_config()
 
                     # 生成摘要
@@ -72,7 +79,6 @@ async def generate_chapter_summary_background(
                 ks = get_knowledge_service()
 
                 # 使用新API插入章节向量
-                user_id = "default_user"  # TODO: 从章节关联的书籍获取实际user_id
                 inserted = ks.upsert_chapter(
                     user_id=user_id,
                     book_id=chapter.book_id,
@@ -104,11 +110,31 @@ def _parse_chapter_ids(ids: str | None) -> list[int] | None:
     return parsed
 
 
-def _get_export_chapters(session: Session, ids: str | None) -> list:
+def _chapter_belongs_to_user(session: Session, chapter_id: int, user_id: str):
+    chapter = get_chapter(session, chapter_id)
+    if not chapter:
+        return None
+    if not chapter.book_id:
+        return chapter if user_id == "default_user" else None
+    book = session.get(Book, chapter.book_id)
+    if not book or book.user_id != user_id:
+        return None
+    return chapter
+
+
+def _get_export_chapters(session: Session, ids: str | None, user_id: str) -> list:
     chapter_ids = _parse_chapter_ids(ids)
     if chapter_ids is None:
-        return get_chapters(session, limit=1000)
-    chapters = get_chapters_by_ids(session, chapter_ids)
+        from sqlmodel import select
+        return list(
+            session.exec(
+                select(Chapter)
+                .join(Book, Book.id == Chapter.book_id)
+                .where(Book.user_id == user_id)
+                .order_by(Chapter.order)
+            ).all()
+        )
+    chapters = [ch for ch in get_chapters_by_ids(session, chapter_ids) if _chapter_belongs_to_user(session, ch.id, user_id)]
     found_ids = {chapter.id for chapter in chapters}
     missing_ids = [chapter_id for chapter_id in chapter_ids if chapter_id not in found_ids]
     if missing_ids:
@@ -123,9 +149,10 @@ def _get_export_chapters(session: Session, ids: str | None) -> list:
 )
 def export_txt(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
 ):
-    chapters = _get_export_chapters(session, ids)
+    chapters = _get_export_chapters(session, ids, current_user.username)
     if not chapters:
         raise HTTPException(status_code=404, detail="No chapters found")
     
@@ -144,9 +171,10 @@ def export_txt(
 )
 def export_docx(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     ids: Annotated[str | None, Query(description="Comma-separated chapter IDs to export")] = None,
 ):
-    chapters = _get_export_chapters(session, ids)
+    chapters = _get_export_chapters(session, ids, current_user.username)
     if not chapters:
         raise HTTPException(status_code=404, detail="No chapters found")
     
@@ -165,10 +193,22 @@ def export_docx(
 )
 def read_chapters(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     offset: Annotated[int, Query(ge=0, description="跳过多少条记录")] = 0,
     limit: Annotated[int, Query(ge=1, le=100, description="最多返回多少条记录")] = 100,
 ):
-    chapters = get_chapters(session, offset=offset, limit=limit)
+    from sqlmodel import select
+    from app.models.chapters import Chapter
+    chapters = list(
+        session.exec(
+            select(Chapter)
+            .join(Book, Book.id == Chapter.book_id)
+            .where(Book.user_id == current_user.username)
+            .order_by(Chapter.order)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
     return chapters
 
 
@@ -181,8 +221,9 @@ def read_chapters(
 def read_chapter(
     chapter_id: Annotated[int, Path(ge=1, description="章节 ID")],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    db_chapter = get_chapter(session, chapter_id)
+    db_chapter = _chapter_belongs_to_user(session, chapter_id, current_user.username)
     if not db_chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
     return db_chapter
@@ -200,7 +241,12 @@ def create_chapter_endpoint(
     chapter: Annotated[ChapterCreate, Body(description="章节创建数据（包含标题、内容等）")],
     background_tasks: BackgroundTasks,
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
+    if chapter.book_id:
+        book = session.get(Book, chapter.book_id)
+        if not book or book.user_id != current_user.username:
+            raise HTTPException(status_code=404, detail="Book not found")
     created_chapter = create_chapter(session, chapter)
     write_chapter_file(created_chapter)
 
@@ -228,8 +274,9 @@ def update_chapter_endpoint(
     chapter: Annotated[ChapterUpdate, Body(description="章节更新数据（仅传入需要修改的字段）")],
     background_tasks: BackgroundTasks,
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    db_chapter = get_chapter(session, chapter_id)
+    db_chapter = _chapter_belongs_to_user(session, chapter_id, current_user.username)
     if not db_chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
 
@@ -268,18 +315,18 @@ def update_chapter_endpoint(
 def delete_chapter_endpoint(
     chapter_id: Annotated[int, Path(ge=1, description="章节 ID")],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    db_chapter = get_chapter(session, chapter_id)
+    db_chapter = _chapter_belongs_to_user(session, chapter_id, current_user.username)
     if not db_chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
 
     # 从向量数据库删除章节向量
     if db_chapter.book_id:
         try:
-            user_id = "default_user"
             ks = get_knowledge_service()
             deleted = ks.delete_chapter(
-                user_id=user_id,
+                user_id=current_user.username,
                 book_id=db_chapter.book_id,
                 chapter_id=chapter_id,
             )
@@ -302,6 +349,7 @@ def delete_chapter_endpoint(
 def get_nearby_chapter_summaries_endpoint(
     chapter_id: Annotated[int, Path(ge=1, description="当前章节 ID")],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     before: Annotated[int, Query(ge=0, le=10, description="获取前面章节的数量")] = 3,
     after: Annotated[int, Query(ge=0, le=10, description="获取后面章节的数量")] = 0,
     
@@ -324,7 +372,7 @@ def get_nearby_chapter_summaries_endpoint(
         }
     """
     # 验证章节存在
-    chapter = get_chapter(session, chapter_id)
+    chapter = _chapter_belongs_to_user(session, chapter_id, current_user.username)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
 

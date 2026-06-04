@@ -56,4 +56,4 @@ foreach ($line in $netstat) {
     }
 }
 
-Write-Host "Novel IDE background services stopped."
+Write-Host "NovelCat background services stopped."

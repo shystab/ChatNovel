@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from sqlmodel import Session
 
 from app.db.session import get_session
+from app.core.auth import CurrentUser, get_current_user
 from app.models.preset import PresetCreate, PresetListResponse, PresetRead, PresetUpdate
 from app.crud.preset_crud import (
     create_preset,
@@ -21,11 +22,12 @@ router = APIRouter()
 @router.get("/", response_model=PresetListResponse)
 def read_presets(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     skip: int = Query(default=0, ge=0, description="跳过条数"),
     limit: int = Query(default=50, ge=1, le=200, description="每页条数"),
     name: str | None = Query(default=None, description="按名称模糊搜索"),
 ):
-    items, total = list_presets(session, skip=skip, limit=limit, name=name)
+    items, total = list_presets(session, skip=skip, limit=limit, name=name, user_id=current_user.username)
     return PresetListResponse(items=items, total=total)  # type: ignore[arg-type]
 
 
@@ -34,7 +36,9 @@ def read_presets(
 def create_new_preset(
     data: Annotated[PresetCreate, Body(description="新预设内容")],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
+    data.user_id = current_user.username
     return create_preset(session, data)
 
 
@@ -44,8 +48,9 @@ def update_existing_preset(
     preset_id: Annotated[int, Path(description="预设 ID")],
     patch: Annotated[PresetUpdate, Body(description="要更新的字段")],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    db_obj = get_preset(session, preset_id)
+    db_obj = get_preset(session, preset_id, user_id=current_user.username)
     if db_obj is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预设不存在")
     return update_preset(session, db_obj, patch)
@@ -56,8 +61,9 @@ def update_existing_preset(
 def delete_existing_preset(
     preset_id: Annotated[int, Path(description="预设 ID")],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    ok = delete_preset(session, preset_id)
+    ok = delete_preset(session, preset_id, user_id=current_user.username)
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预设不存在")
 
@@ -67,8 +73,9 @@ def delete_existing_preset(
 def toggle_existing_preset(
     preset_id: Annotated[int, Path(description="预设 ID")],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    result = toggle_preset(session, preset_id)
+    result = toggle_preset(session, preset_id, user_id=current_user.username)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="预设不存在")
     return result

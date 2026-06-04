@@ -13,7 +13,7 @@ export interface Book {
 export interface BookCreate {
   title: string;
   description?: string;
-  user_id: string;
+  user_id?: string;
   cover_url?: string;
 }
 
@@ -68,6 +68,27 @@ export interface ConversationUpdate {
   title?: string;
   messages?: Array<{ role: string; content: string }>;
   selected_doc_ids?: number[];
+}
+
+// ── Auth ────────────────────────────────────────
+export interface AuthUser {
+  username: string;
+  is_admin: boolean;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
+export interface InviteCode {
+  code: string;
+  max_uses: number;
+  uses: number;
+  is_active: boolean;
+  created_at: string;
+  expires_at?: string | null;
 }
 
 // ── AI 章节上下文 ──────────────────────────────────
@@ -150,7 +171,7 @@ export interface Settings {
   nearby_chapter_count?: number;
   inject_nearby_summaries?: boolean;
   inject_chapter_rag?: boolean;
-  // RAG 行为
+  // 检索行为：external 是外部语料 RAG，chapter 是内部全书检索
   suggest_use_external_rag?: boolean;
   chat_use_chapter_rag?: boolean;
   external_rag_weight?: number;
@@ -179,7 +200,7 @@ export interface SettingsUpdate {
   nearby_chapter_count?: number;
   inject_nearby_summaries?: boolean;
   inject_chapter_rag?: boolean;
-  // RAG 行为
+  // 检索行为：external 是外部语料 RAG，chapter 是内部全书检索
   suggest_use_external_rag?: boolean;
   chat_use_chapter_rag?: boolean;
   external_rag_weight?: number;
@@ -224,6 +245,24 @@ export interface KnowledgeBase {
   project_id: string;
   created_at: string | null;
   chunk_count: number;
+}
+
+export interface KnowledgeHealth {
+  enabled: boolean;
+  vector_ready: boolean;
+  model: string;
+  persist_dir: string;
+  local_files_only: boolean;
+  device: string;
+  retrieval_mode: "vector";
+  user_id: string;
+}
+
+export interface KnowledgeReindexResult {
+  documents: number;
+  vectorized_chunks: number;
+  vector_ready: boolean;
+  retrieval_mode: "vector";
 }
 
 export type AIWSMessage =

@@ -6,6 +6,7 @@ from sqlmodel import Session
 from typing import Annotated, Any
 
 from app.db.session import get_session
+from app.core.auth import CurrentUser, get_current_user
 from app.crud import conversation_crud
 from app.models.conversations import ConversationRead, ConversationCreate, ConversationUpdate
 
@@ -20,6 +21,7 @@ class ConversationCreateRequest(ConversationCreate):
 @router.get("/", response_model=list[ConversationRead], summary="获取对话列表")
 def list_conversations(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
     skip: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     include_empty: Annotated[bool, Query(description="是否包含无消息、无文档、默认标题的空对话")] = False,
@@ -29,6 +31,7 @@ def list_conversations(
         skip=skip,
         limit=limit,
         include_empty=include_empty,
+        user_id=current_user.username,
     )
 
 
@@ -36,7 +39,9 @@ def list_conversations(
 def create_conversation(
     conv_in: Annotated[ConversationCreateRequest, Body()],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
+    conv_in.user_id = current_user.username
     conv = conversation_crud.create_conversation(session, conv_in)
     if conv_in.messages:
         conv = conversation_crud.update_conversation(
@@ -49,8 +54,9 @@ def create_conversation(
 def get_conversation(
     conversation_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    conv = conversation_crud.get_conversation(session, conversation_id)
+    conv = conversation_crud.get_conversation(session, conversation_id, user_id=current_user.username)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conv
@@ -59,8 +65,9 @@ def get_conversation(
 @router.delete("/empty", summary="清理空对话")
 def delete_empty_conversations(
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    deleted_ids = conversation_crud.delete_empty_conversations(session)
+    deleted_ids = conversation_crud.delete_empty_conversations(session, user_id=current_user.username)
     return {"deleted_count": len(deleted_ids), "deleted_ids": deleted_ids}
 
 
@@ -69,8 +76,9 @@ def update_conversation(
     conversation_id: Annotated[int, Path(ge=1)],
     conv_in: Annotated[ConversationUpdate, Body()],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    conv = conversation_crud.get_conversation(session, conversation_id)
+    conv = conversation_crud.get_conversation(session, conversation_id, user_id=current_user.username)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation_crud.update_conversation(session, conv, conv_in)
@@ -80,8 +88,9 @@ def update_conversation(
 def delete_conversation(
     conversation_id: Annotated[int, Path(ge=1)],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    conv = conversation_crud.get_conversation(session, conversation_id)
+    conv = conversation_crud.get_conversation(session, conversation_id, user_id=current_user.username)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     conversation_crud.delete_conversation(session, conv)
@@ -92,8 +101,9 @@ def update_conversation_docs(
     conversation_id: Annotated[int, Path(ge=1)],
     doc_ids: Annotated[list[int], Body()],
     session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
-    conv = conversation_crud.get_conversation(session, conversation_id)
+    conv = conversation_crud.get_conversation(session, conversation_id, user_id=current_user.username)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation_crud.update_conversation(

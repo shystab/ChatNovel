@@ -6,8 +6,11 @@ from sqlmodel import Session, select
 from app.models.conversations import Conversation, ConversationCreate, ConversationUpdate
 
 
-def get_conversation(session: Session, conversation_id: int) -> Conversation | None:
-    return session.get(Conversation, conversation_id)
+def get_conversation(session: Session, conversation_id: int, user_id: str | None = None) -> Conversation | None:
+    conv = session.get(Conversation, conversation_id)
+    if user_id is not None and conv and conv.user_id != user_id:
+        return None
+    return conv
 
 
 def _has_user_content(conv: Conversation) -> bool:
@@ -23,13 +26,15 @@ def get_conversations(
     skip: int = 0,
     limit: int = 50,
     include_empty: bool = False,
+    user_id: str | None = None,
 ) -> list[Conversation]:
     statement = (
         select(Conversation)
         .order_by(Conversation.update_time.desc())  # type: ignore[attr-defined]
-        .offset(skip)
-        .limit(limit if include_empty else max(limit * 4, 50))
     )
+    if user_id is not None:
+        statement = statement.where(Conversation.user_id == user_id)
+    statement = statement.offset(skip).limit(limit if include_empty else max(limit * 4, 50))
     conversations = list(session.exec(statement).all())
     if include_empty:
         return conversations
@@ -67,8 +72,11 @@ def delete_conversation(session: Session, conv: Conversation) -> None:
     session.commit()
 
 
-def delete_empty_conversations(session: Session) -> list[int]:
-    conversations = list(session.exec(select(Conversation)).all())
+def delete_empty_conversations(session: Session, user_id: str | None = None) -> list[int]:
+    stmt = select(Conversation)
+    if user_id is not None:
+        stmt = stmt.where(Conversation.user_id == user_id)
+    conversations = list(session.exec(stmt).all())
     empty_conversations = [conv for conv in conversations if not _has_user_content(conv)]
     deleted_ids = [conv.id for conv in empty_conversations if conv.id is not None]
     for conv in empty_conversations:

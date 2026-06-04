@@ -32,9 +32,12 @@ class BookRead(BaseBook):
     chapter_count: Annotated[int, Field(default=0, description="章节数量")]
 
 
-class BookCreate(BaseBook):
+class BookCreate(SQLModel):
     """创建书籍时的请求模型"""
-    pass
+    title: Annotated[str, Field(index=True, description="书籍标题")]
+    description: Annotated[str | None, Field(default=None, description="书籍简介")]
+    user_id: Annotated[str | None, Field(default=None, description="用户ID")]
+    cover_url: Annotated[str | None, Field(default=None, description="封面图片URL")]
 
 
 class BookUpdate(SQLModel):

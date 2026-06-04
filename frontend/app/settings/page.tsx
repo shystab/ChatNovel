@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Settings, SettingsUpdate, KnowledgeBase } from "@/types/api";
-import { api } from "@/lib/api";
+import { Settings, SettingsUpdate, KnowledgeBase, AuthUser, InviteCode, KnowledgeHealth } from "@/types/api";
+import { api, withAccessToken } from "@/lib/api";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -23,6 +23,8 @@ import {
   Loader2,
   Archive,
   Image as ImageIcon,
+  Copy,
+  UserPlus,
 } from "lucide-react";
 import PersonaManager from "@/components/persona-manager";
 import { useTheme } from "@/hooks/use-theme";
@@ -55,8 +57,13 @@ export default function SettingsPage() {
   const [backgroundStatus, setBackgroundStatus] = useState("");
   const [backgroundUploading, setBackgroundUploading] = useState(false);
   const [backgroundVersion, setBackgroundVersion] = useState(Date.now());
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [inviteMaxUses, setInviteMaxUses] = useState(1);
+  const [inviteExpiresDays, setInviteExpiresDays] = useState(14);
+  const [inviteCreating, setInviteCreating] = useState(false);
+  const [lastInvite, setLastInvite] = useState<InviteCode | null>(null);
 
-  // 分层记忆和RAG设置
+  // 分层记忆和检索设置
   const [currentChapterChars, setCurrentChapterChars] = useState(4000);
   const [nearbyChapterCount, setNearbyChapterCount] = useState(3);
   const [injectNearbySummaries, setInjectNearbySummaries] = useState(true);
@@ -72,17 +79,27 @@ export default function SettingsPage() {
   const [kbError, setKbError] = useState<string | null>(null);
   const [kbDeleteTarget, setKbDeleteTarget] = useState<KnowledgeBase | null>(null);
   const [kbDeleting, setKbDeleting] = useState(false);
+  const [kbHealth, setKbHealth] = useState<KnowledgeHealth | null>(null);
+  const [kbHealthLoading, setKbHealthLoading] = useState(false);
+  const [kbReindexing, setKbReindexing] = useState(false);
+  const [kbReindexStatus, setKbReindexStatus] = useState("");
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3000);
   };
 
-  useEffect(() => { loadSettings(); }, []);
+  useEffect(() => {
+    loadSettings();
+    api.me().then(setCurrentUser).catch(() => setCurrentUser(null));
+  }, []);
 
   // 切换到知识库 Tab 时加载
   useEffect(() => {
-    if (activeTab === "knowledge") loadKnowledgeBases();
+    if (activeTab === "knowledge") {
+      loadKnowledgeBases();
+      loadKnowledgeHealth();
+    }
   }, [activeTab]);
 
   const loadSettings = async () => {
@@ -99,7 +116,7 @@ export default function SettingsPage() {
       setBackgroundBlur(data.background_blur ?? 0);
       setBackgroundDim(data.background_dim ?? 22);
       setEditorPaperOpacity(data.editor_paper_opacity ?? 92);
-      // 分层记忆和RAG设置
+      // 分层记忆和检索设置
       setCurrentChapterChars(data.current_chapter_chars ?? 4000);
       setNearbyChapterCount(data.nearby_chapter_count ?? 3);
       setInjectNearbySummaries(data.inject_nearby_summaries ?? true);
@@ -129,7 +146,12 @@ export default function SettingsPage() {
     try {
       await api.uploadKnowledgeBase(file);
       await loadKnowledgeBases();
-    } catch { setKbError("上传失败，请确保格式正确（txt/pdf/docx）"); }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      setKbError(message.includes("向量") || message.includes("embedding")
+        ? "外部语料需要向量模型。请先安装向量依赖并确认模型已加载。"
+        : "上传失败，请确保格式正确（txt/pdf/docx）");
+    }
     finally { setKbUploading(false); e.target.value = ""; }
   };
 
@@ -143,6 +165,63 @@ export default function SettingsPage() {
     }
     catch { setKbError("删除失败"); }
     finally { setKbDeleting(false); }
+  };
+
+  const loadKnowledgeHealth = async () => {
+    setKbHealthLoading(true);
+    try {
+      const data = await api.getKnowledgeHealth();
+      setKbHealth(data);
+    } catch {
+      setKbHealth(null);
+    } finally {
+      setKbHealthLoading(false);
+    }
+  };
+
+  const handleKnowledgeReindex = async () => {
+    setKbReindexing(true);
+    setKbReindexStatus("");
+    setKbError(null);
+    try {
+      const result = await api.reindexKnowledge();
+      setKbReindexStatus(`已重建 ${result.documents} 个文档，写入 ${result.vectorized_chunks} 个向量切片`);
+      await loadKnowledgeHealth();
+      await loadKnowledgeBases();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      setKbError(message.includes("向量") || message.includes("embedding")
+        ? "向量模型未就绪。请先运行 download-vector-model.cmd，然后重启后端。"
+        : "重建索引失败");
+    } finally {
+      setKbReindexing(false);
+    }
+  };
+
+  const handleCreateInvite = async () => {
+    setInviteCreating(true);
+    try {
+      const invite = await api.createInvite(
+        Math.max(1, inviteMaxUses || 1),
+        inviteExpiresDays > 0 ? inviteExpiresDays : null,
+      );
+      setLastInvite(invite);
+      showToast("邀请码已生成", true);
+    } catch {
+      showToast("生成邀请码失败，请确认当前账号是管理员", false);
+    } finally {
+      setInviteCreating(false);
+    }
+  };
+
+  const handleCopyInvite = async () => {
+    if (!lastInvite?.code) return;
+    try {
+      await navigator.clipboard.writeText(lastInvite.code);
+      showToast("邀请码已复制", true);
+    } catch {
+      showToast("复制失败，请手动选中复制", false);
+    }
   };
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -160,7 +239,7 @@ export default function SettingsPage() {
         background_blur: backgroundBlur,
         background_dim: backgroundDim,
         editor_paper_opacity: editorPaperOpacity,
-        // 分层记忆和RAG设置
+        // 分层记忆和检索设置
         current_chapter_chars: currentChapterChars,
         nearby_chapter_count: nearbyChapterCount,
         inject_nearby_summaries: injectNearbySummaries,
@@ -313,7 +392,7 @@ export default function SettingsPage() {
   const hoverRow = isDark ? 'hover:bg-slate-900' : isSepia ? 'hover:bg-amber-100/60' : 'hover:bg-slate-50';
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
   const backgroundPreviewUrl = settings?.background_image_path
-    ? `${apiBase}/settings/background?v=${backgroundVersion}`
+    ? withAccessToken(`${apiBase}/settings/background?v=${backgroundVersion}`)
     : "";
 
   return (
@@ -406,6 +485,74 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   </section>
+
+                  {currentUser?.is_admin && (
+                    <section className="space-y-5">
+                      <div className={`flex items-center space-x-2 border-b ${borderCls} pb-4`}>
+                        <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
+                        <h2 className={`text-lg font-bold ${headingTxt}`}>邀请朋友</h2>
+                      </div>
+                      <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
+                        <div className="flex items-start gap-4">
+                          <div className={`p-2 ${isDark ? 'bg-slate-800' : isSepia ? 'bg-amber-100' : 'bg-slate-100'} rounded-md ${mutedTxt}`}>
+                            <UserPlus size={18} />
+                          </div>
+                          <div className="flex-1 space-y-4">
+                            <div>
+                              <div className={`text-sm font-bold ${headingTxt}`}>生成邀请码</div>
+                              <p className={`text-xs ${mutedTxt} mt-1`}>第一个注册的人会自动成为管理员，之后新用户需要管理员生成的邀请码。</p>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                              <label className="space-y-1">
+                                <span className={`text-xs font-bold ${mutedTxt}`}>可使用次数</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={20}
+                                  value={inviteMaxUses}
+                                  onChange={(e) => setInviteMaxUses(parseInt(e.target.value) || 1)}
+                                  className={`w-full border rounded-md px-3 py-2 text-sm outline-none transition-all ${inputCls}`}
+                                />
+                              </label>
+                              <label className="space-y-1">
+                                <span className={`text-xs font-bold ${mutedTxt}`}>有效天数</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={365}
+                                  value={inviteExpiresDays}
+                                  onChange={(e) => setInviteExpiresDays(parseInt(e.target.value) || 0)}
+                                  className={`w-full border rounded-md px-3 py-2 text-sm outline-none transition-all ${inputCls}`}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleCreateInvite}
+                                disabled={inviteCreating}
+                                className={`self-end flex items-center justify-center gap-2 px-4 py-2 rounded-md ${primaryBtn} disabled:opacity-50 transition-all font-semibold text-sm`}
+                              >
+                                {inviteCreating ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
+                                生成
+                              </button>
+                            </div>
+                            {lastInvite && (
+                              <div className={`flex flex-col sm:flex-row sm:items-center gap-3 rounded-md border ${borderCls} p-3 ${isDark ? 'bg-slate-950/40' : isSepia ? 'bg-white/40' : 'bg-slate-50'}`}>
+                                <code className={`flex-1 text-sm font-mono font-bold break-all ${headingTxt}`}>{lastInvite.code}</code>
+                                <button
+                                  type="button"
+                                  onClick={handleCopyInvite}
+                                  className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-xs font-bold ${secondaryBtn}`}
+                                >
+                                  <Copy size={14} />
+                                  复制
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  )}
 
                   {/* API Key */}
                   <section className="space-y-5">
@@ -550,7 +697,7 @@ export default function SettingsPage() {
                             type="text"
                             value={workspaceDir}
                             onChange={(e) => setWorkspaceDir(e.target.value)}
-                            placeholder="D:\\Novels\\VibeWriter"
+                            placeholder="D:\\Novels\\NovelCat"
                             className={`w-full border rounded-md px-3 py-2 mt-3 text-sm outline-none transition-all font-mono ${inputCls}`}
                           />
                         </div>
@@ -673,16 +820,16 @@ export default function SettingsPage() {
                     </div>
                   </section>
 
-                  {/* RAG 行为 */}
+                  {/* 检索行为 */}
                   <section className="space-y-5">
                     <div className={`flex items-center space-x-2 border-b ${borderCls} pb-4`}>
                       <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
-                      <h2 className={`text-lg font-bold ${headingTxt}`}>RAG 行为</h2>
+                      <h2 className={`text-lg font-bold ${headingTxt}`}>检索行为</h2>
                     </div>
                     <div className={`p-5 rounded-lg border ${cardBg} space-y-5`}>
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className={`text-sm font-bold ${headingTxt}`}>续写时默认使用外部知识库</p>
+                          <p className={`text-sm font-bold ${headingTxt}`}>续写时默认使用外部语料 RAG</p>
                           <p className={`text-xs ${mutedTxt} mt-0.5`}>关闭可防止 AI 直接复制上传的文档内容</p>
                         </div>
                         <button
@@ -696,7 +843,7 @@ export default function SettingsPage() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className={`text-sm font-bold ${headingTxt}`}>对话中自动检索全书</p>
-                          <p className={`text-xs ${mutedTxt} mt-0.5`}>对话时自动从全书章节中检索相关内容</p>
+                          <p className={`text-xs ${mutedTxt} mt-0.5`}>对话时自动从自己的全书章节中检索相关内容；这是分层记忆的一层，不是外部 RAG。</p>
                         </div>
                         <button
                           type="button"
@@ -708,10 +855,10 @@ export default function SettingsPage() {
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <label className={`text-sm font-bold ${headingTxt}`}>外部知识库权重</label>
+                          <label className={`text-sm font-bold ${headingTxt}`}>外部语料权重</label>
                           <span className={`text-sm font-mono ${mutedTxt}`}>{externalRagWeight}</span>
                         </div>
-                        <p className={`text-xs ${mutedTxt}`}>值越高，AI 越倾向于参考外部文档风格</p>
+                        <p className={`text-xs ${mutedTxt}`}>值越高，AI 越倾向于参考上传的外部文档风格</p>
                         <input
                           type="range" min={0} max={100} step={5}
                           value={externalRagWeight}
@@ -756,13 +903,61 @@ export default function SettingsPage() {
                     </div>
                   )}
 
+                  <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-md ${kbHealth?.vector_ready ? 'bg-emerald-100 text-emerald-700' : isDark ? 'bg-red-950/50 text-red-300' : 'bg-red-50 text-red-600'}`}>
+                          {kbHealthLoading ? <Loader2 size={18} className="animate-spin" /> : kbHealth?.vector_ready ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                        </div>
+                        <div>
+                          <h3 className={`text-sm font-bold ${headingTxt}`}>
+                            {kbHealth?.vector_ready ? "向量引擎已就绪" : "向量引擎未就绪"}
+                          </h3>
+                          <p className={`text-xs ${mutedTxt} mt-1`}>
+                            {kbHealth?.model || "BAAI/bge-small-zh-v1.5"} · {kbHealth?.device || "cpu"} · {kbHealth?.local_files_only ? "本地缓存" : "允许下载"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={loadKnowledgeHealth}
+                          disabled={kbHealthLoading}
+                          className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md border text-xs font-bold ${secondaryBtn} disabled:opacity-50`}
+                        >
+                          {kbHealthLoading ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />}
+                          刷新状态
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleKnowledgeReindex}
+                          disabled={kbReindexing || !kbHealth?.vector_ready}
+                          className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold ${primaryBtn} disabled:opacity-50`}
+                        >
+                          {kbReindexing ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
+                          重建索引
+                        </button>
+                      </div>
+                    </div>
+                    {kbReindexStatus && (
+                      <div className={`text-xs ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>{kbReindexStatus}</div>
+                    )}
+                    {!kbHealth?.vector_ready && (
+                      <div className={`text-xs leading-relaxed ${mutedTxt}`}>
+                        运行 download-vector-model.cmd 后重启后端；外部语料只使用向量检索。
+                      </div>
+                    )}
+                  </div>
+
                   {/* 上传区 */}
                   <div className={`p-5 rounded-lg border ${cardBg}`}>
                     <label className="relative group cursor-pointer block">
-                      <input type="file" className="hidden" onChange={handleKbUpload} disabled={kbUploading} accept=".txt,.pdf,.docx" />
+                      <input type="file" className="hidden" onChange={handleKbUpload} disabled={kbUploading || !kbHealth?.vector_ready} accept=".txt,.pdf,.docx" />
                       <div className={`border border-dashed rounded-lg p-8 flex flex-col items-center justify-center transition-all ${
                         kbUploading
                           ? `${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`
+                          : !kbHealth?.vector_ready
+                          ? `${isDark ? 'border-red-900 bg-red-950/20' : 'border-red-200 bg-red-50/60'} cursor-not-allowed`
                           : `${isDark ? 'border-slate-700 hover:border-slate-500 hover:bg-slate-800/50' : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50'}`
                       }`}>
                         {kbUploading ? (
@@ -771,9 +966,9 @@ export default function SettingsPage() {
                           <Upload size={32} className={`${mutedTxt} ${groupHoverTxt} transition-colors mb-4`} />
                         )}
                         <span className={`text-sm font-bold ${headingTxt}`}>
-                          {kbUploading ? "正在解析并向量化..." : "点击或拖拽上传写作语料"}
+                          {kbUploading ? "正在解析并向量化..." : kbHealth?.vector_ready ? "点击或拖拽上传写作语料" : "向量引擎就绪后才能上传"}
                         </span>
-                        <span className={`text-[10px] ${mutedTxt} mt-2`}>支持 TXT, PDF, DOCX · 自动切片存储</span>
+                        <span className={`text-[10px] ${mutedTxt} mt-2`}>支持 TXT, PDF, DOCX · 纯向量检索</span>
                       </div>
                     </label>
                   </div>

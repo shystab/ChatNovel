@@ -189,7 +189,7 @@ class AIProviderFactory:
         return provider_class(api_key=api_key)
 
 
-def get_ai_provider(session: Session | None = None) -> BaseAIProvider:
+def get_ai_provider(session: Session | None = None, user_id: str = "default_user") -> BaseAIProvider:
     """获取当前配置的 AI 提供商"""
     from app.crud.settings_crud import get_settings
     
@@ -197,7 +197,7 @@ def get_ai_provider(session: Session | None = None) -> BaseAIProvider:
     provider_name = settings.AI_PROVIDER
 
     if session:
-        db_settings = get_settings(session)
+        db_settings = get_settings(session, user_id=user_id)
         if db_settings:
             # 1. 优先使用数据库中的供应商设置
             provider_name = db_settings.ai_provider or settings.AI_PROVIDER

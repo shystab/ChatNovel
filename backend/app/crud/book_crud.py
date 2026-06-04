@@ -5,14 +5,20 @@ from sqlmodel import Session, select
 from app.models.books import Book, BookCreate, BookUpdate
 
 
-def get_book(session: Session, book_id: int) -> Book | None:
+def get_book(session: Session, book_id: int, user_id: str | None = None) -> Book | None:
     """根据 ID 获取书籍"""
-    return session.get(Book, book_id)
+    book = session.get(Book, book_id)
+    if user_id is not None and book and book.user_id != user_id:
+        return None
+    return book
 
 
-def get_books(session: Session, skip: int = 0, limit: int = 100) -> list[Book]:
+def get_books(session: Session, skip: int = 0, limit: int = 100, user_id: str | None = None) -> list[Book]:
     """获取书籍列表"""
-    statement = select(Book).offset(skip).limit(limit)
+    statement = select(Book)
+    if user_id is not None:
+        statement = statement.where(Book.user_id == user_id)
+    statement = statement.offset(skip).limit(limit)
     return list(session.exec(statement).all())
 
 

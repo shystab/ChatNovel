@@ -196,7 +196,7 @@ def write_library_index(items: Iterable[tuple[Book, list[Chapter]]]) -> dict:
     updated_at = datetime.now().isoformat(timespec="seconds")
     books: list[dict] = []
     readme_lines = [
-        "# VibeWriter 作品库",
+        "# NovelCat 作品库",
         "",
         f"更新时间：{updated_at}",
         "",
@@ -226,7 +226,7 @@ def write_library_index(items: Iterable[tuple[Book, list[Chapter]]]) -> dict:
         readme_lines.append("- 暂无作品")
 
     manifest = {
-        "app": "VibeWriter",
+        "app": "NovelCat",
         "updated_at": updated_at,
         "book_count": len(books),
         "chapter_count": sum(book["chapter_count"] for book in books),
@@ -458,11 +458,11 @@ def _sqlite_database_path(database_url: str) -> Path | None:
 def build_workspace_backup(database_url: str | None = None) -> tuple[str, io.BytesIO]:
     root = workspace_root()
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"VibeWriter-backup-{timestamp}.zip"
+    filename = f"NovelCat-backup-{timestamp}.zip"
     database_path = _sqlite_database_path(database_url or settings.DATABASE_URL)
 
     metadata = {
-        "app": "VibeWriter",
+        "app": "NovelCat",
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "workspace": str(root),
         "database": str(database_path) if database_path else None,

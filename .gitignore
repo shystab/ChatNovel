@@ -1,5 +1,5 @@
 # ============================================
-# Root .gitignore for Novel IDE (Fast)
+# Root .gitignore for NovelCat
 # ============================================
 
 # Python (Backend)
@@ -71,6 +71,8 @@ desktop/release/
 
 # Database files
 *.db
+*.db-shm
+*.db-wal
 *.db.bak-*
 *.sqlite
 *.sqlite3
@@ -87,6 +89,8 @@ backend/workspace/
 !.env.local.example
 frontend/.env.local
 !frontend/.env.local.example
+!backend/.env.server.example
+!frontend/.env.server.example
 .secret.key
 backend/.secret.key
 

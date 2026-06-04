@@ -3,8 +3,14 @@ from __future__ import annotations
 import os
 from typing import Iterable, TYPE_CHECKING
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
+from app.core.config import settings
+
+try:
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+except Exception:
+    chromadb = None
+    ChromaSettings = None
 
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
@@ -41,27 +47,51 @@ def _chunk_text(text: str, max_chars: int = 800, overlap: int = 100) -> list[str
 
 
 class KnowledgeService:
-    def __init__(self, persist_dir: str | None = None, model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+    def __init__(self, persist_dir: str | None = None, model_name: str | None = None):
         persist_dir = persist_dir or os.environ.get("NOVEL_CHROMA_DIR") or ".chroma"
+        model_name = model_name or settings.EMBEDDING_MODEL_NAME
         self.persist_dir = persist_dir
+        self.model_name = model_name
+        self.client = None
+        self.embedding_model: SentenceTransformer | None = None
+
+        if not settings.ENABLE_LOCAL_EMBEDDINGS or chromadb is None or ChromaSettings is None:
+            return
+
         os.makedirs(self.persist_dir, exist_ok=True)
 
         self.client = chromadb.PersistentClient(
             path=self.persist_dir,
             settings=ChromaSettings(anonymized_telemetry=False),
         )
-        # 强制离线加载，避免每次请求都尝试联网检查更新
-        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-        os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+        if settings.EMBEDDING_LOCAL_FILES_ONLY:
+            os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+            os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
         try:
             from sentence_transformers import SentenceTransformer
 
-            self.embedding_model: SentenceTransformer | None = SentenceTransformer(
-                model_name, local_files_only=True
+            self.embedding_model = SentenceTransformer(
+                model_name,
+                device=settings.EMBEDDING_DEVICE,
+                local_files_only=settings.EMBEDDING_LOCAL_FILES_ONLY,
             )
         except Exception:
             # 模型未缓存到本地，RAG 功能不可用，但不影响其他功能
             self.embedding_model = None
+
+    @property
+    def vector_enabled(self) -> bool:
+        return self.client is not None and self.embedding_model is not None
+
+    def status(self) -> dict:
+        return {
+            "enabled": settings.ENABLE_LOCAL_EMBEDDINGS,
+            "vector_ready": self.vector_enabled,
+            "model": self.model_name,
+            "persist_dir": self.persist_dir,
+            "local_files_only": settings.EMBEDDING_LOCAL_FILES_ONLY,
+            "device": settings.EMBEDDING_DEVICE,
+        }
 
     def _collection_name(self, user_id: str, project_id: str) -> str:
         """旧版集合命名（保持兼容性）"""
@@ -88,9 +118,9 @@ class KnowledgeService:
         document_id: int,
         chunks: Iterable[tuple[int, str]],
     ) -> int:
-        if self.embedding_model is None:
+        if not self.vector_enabled:
             return 0
-        col = self.client.get_or_create_collection(self._collection_name(user_id, project_id))
+        col = self.client.get_or_create_collection(self._external_collection_name(user_id, project_id))
 
         ids: list[str] = []
         texts: list[str] = []
@@ -101,13 +131,20 @@ class KnowledgeService:
             texts.append(text)
             metadatas.append({"document_id": document_id, "chunk_id": chunk_id})
 
-        embeddings = self.embedding_model.encode(texts, normalize_embeddings=True).tolist()
+        embeddings = self.embedding_model.encode(
+            texts,
+            normalize_embeddings=True,
+            batch_size=settings.EMBEDDING_BATCH_SIZE,
+        ).tolist()
         col.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
         return len(ids)
 
     def delete_document_chunks(self, *, user_id: str, project_id: str, chunk_ids: Iterable[int]) -> int:
         ids = [f"chunk:{chunk_id}" for chunk_id in chunk_ids]
         if not ids:
+            return 0
+
+        if self.client is None:
             return 0
 
         deleted = 0
@@ -125,7 +162,7 @@ class KnowledgeService:
 
     def search(self, *, user_id: str, project_id: str, query: str, top_k: int = 5) -> list[dict]:
         """旧版搜索（保持兼容性）"""
-        if self.embedding_model is None:
+        if not self.vector_enabled:
             return []
         col = self.client.get_or_create_collection(self._collection_name(user_id, project_id))
         q_emb = self.embedding_model.encode([query], normalize_embeddings=True).tolist()
@@ -150,7 +187,7 @@ class KnowledgeService:
         document_ids: list[int] | None = None,
     ) -> list[dict]:
         """搜索外部知识库（带权重过滤）"""
-        if self.embedding_model is None:
+        if not self.vector_enabled:
             return []
         # 尝试新集合，回退到旧集合
         try:
@@ -184,7 +221,7 @@ class KnowledgeService:
         top_k: int = 5,
     ) -> list[dict]:
         """搜索全书章节"""
-        if self.embedding_model is None:
+        if not self.vector_enabled:
             return []
         # 尝试新集合，回退到旧集合（book_ 前缀）
         try:
@@ -245,6 +282,8 @@ class KnowledgeService:
         """插入/更新章节向量"""
         if self.embedding_model is None:
             return 0
+        if self.client is None:
+            return 0
         # 先删除旧向量
         self.delete_chapter(user_id=user_id, book_id=book_id, chapter_id=chapter_id)
         # 插入新向量
@@ -263,7 +302,11 @@ class KnowledgeService:
                 "chunk_index": chunk_idx,
                 "source_type": "chapter",
             })
-        embeddings = self.embedding_model.encode(texts, normalize_embeddings=True).tolist()
+        embeddings = self.embedding_model.encode(
+            texts,
+            normalize_embeddings=True,
+            batch_size=settings.EMBEDDING_BATCH_SIZE,
+        ).tolist()
         col.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
         return len(ids)
 

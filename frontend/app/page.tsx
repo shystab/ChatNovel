@@ -5,13 +5,13 @@ import ChapterList from "@/components/chapter-list";
 import NovelEditor from "@/components/novel-editor";
 import AIChat from "@/components/ai-chat";
 import BookSelector from "@/components/book-selector";
-import { api } from "@/lib/api";
-import { Book, Chapter, EditorAppearance } from "@/types/api";
-import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { api, getStoredUser, withAccessToken } from "@/lib/api";
+import { AuthUser, Book, Chapter, EditorAppearance } from "@/types/api";
+import { LogOut, PanelLeftOpen, PanelRightOpen, UserRound } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 
-const SESSION_KEY = "vibe_writer_session";
-const ACTIVE_BOOK_KEY = "vibe_writer_active_book";
+const SESSION_KEY = "novelcat_session";
+const ACTIVE_BOOK_KEY = "novelcat_active_book";
 
 interface SessionState {
   selectedChapterId: number | null;
@@ -78,11 +78,13 @@ export default function Home() {
   const [showRight, setShowRight] = useState(true);
   const [leftWidth, setLeftWidth] = useState(300);
   const [rightWidth, setRightWidth] = useState(380);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const { theme, colors } = useTheme();
 
   // ── 启动序列 ──────────────────────────────────────
   useEffect(() => {
     async function init() {
+      setCurrentUser(getStoredUser());
       // 1. 恢复面板状态
       const savedSession = loadSession();
       if (savedSession) {
@@ -99,7 +101,7 @@ export default function Home() {
           background_blur: settings.background_blur ?? 0,
           background_dim: settings.background_dim ?? 22,
           editor_paper_opacity: settings.editor_paper_opacity ?? 92,
-          background_url: settings.background_image_path ? `${apiBase}/settings/background?v=${Date.now()}` : undefined,
+          background_url: settings.background_image_path ? withAccessToken(`${apiBase}/settings/background?v=${Date.now()}`) : undefined,
         });
       } catch {
         console.error("加载自动保存设置失败");
@@ -169,6 +171,15 @@ export default function Home() {
       }
     }
     void init();
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    api.logout();
+    try {
+      sessionStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(ACTIVE_BOOK_KEY);
+    } catch {}
+    window.location.href = "/login";
   }, []);
 
   // ── 持久化 session ────────────────────────────────
@@ -444,6 +455,32 @@ export default function Home() {
                   theme={theme}
                   colors={colors}
                 />
+                {currentUser && (
+                  <div className={`px-3 py-2 border-b flex items-center gap-2 ${
+                    theme === "dark"
+                      ? "border-slate-700 bg-slate-900 text-slate-300"
+                      : theme === "sepia"
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                  }`}>
+                    <UserRound size={13} className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold">{currentUser.username}</span>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      title="退出登录"
+                      className={`p-1 rounded transition-colors ${
+                        theme === "dark"
+                          ? "hover:bg-slate-800 hover:text-slate-100"
+                          : theme === "sepia"
+                          ? "hover:bg-amber-100 hover:text-amber-950"
+                          : "hover:bg-white hover:text-slate-900"
+                      }`}
+                    >
+                      <LogOut size={13} />
+                    </button>
+                  </div>
+                )}
                 {/* 章节列表 */}
                 <div className="flex-1 min-h-0">
                   <ChapterList

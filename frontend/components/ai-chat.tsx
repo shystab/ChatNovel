@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useWebSocket } from "@/hooks/use-websocket";
-import { api } from "@/lib/api";
+import { api, authHeaders } from "@/lib/api";
 import { Send, ArrowLeftRight, Sparkles, ChevronDown, User, PanelRightClose, Library, Trash2, Plus, FileText, Database } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
 import { AgentEditPlan, Chapter, Conversation } from "@/types/api";
@@ -182,7 +182,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
 
   const loadPresets = useCallback(async () => {
     try {
-      const res = await fetch(`${BASE}/presets/`);
+      const res = await fetch(`${BASE}/presets/`, { headers: authHeaders() });
       const data: PresetListResponse = await res.json();
       setPresets(data.items);
       const enabled = data.items.find(p => p.is_enabled);
@@ -203,7 +203,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
 
   const ensureConversation = useCallback(async () => {
     if (convIdRef.current) return convIdRef.current;
-    const conv = await api.createConversation({ title: "新对话", user_id: "default_user" });
+    const conv = await api.createConversation({ title: "新对话" });
     convIdRef.current = conv.id;
     setCurrentConversationId(conv.id);
     setConversationTitle(conv.title || "新对话");

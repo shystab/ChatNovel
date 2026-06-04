@@ -3,11 +3,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel, Session
 
-from app.api.v1.endpoints import chapters, settings, ai, memory, knowledge, finetune, presets
+from app.api.v1.endpoints import auth, chapters, settings, ai, memory, knowledge, finetune, presets
 from app.api.v1.endpoints import books as books_ep, conversations as conversations_ep
 from app.db.session import engine
 from app.db.migration import run_startup_migration
 from app.core.config import settings as app_settings
+from app.core.access import access_token_middleware
 
 
 @asynccontextmanager
@@ -29,6 +30,8 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.middleware("http")(access_token_middleware)
+
 # 添加 CORS 中间件，允许跨域请求
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +39,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+# 注册认证路由
+app.include_router(
+    auth.router,
+    prefix=f"{app_settings.API_V1_STR}/auth",
+    tags=["auth"]
 )
 
 # 注册章节路由
@@ -105,7 +115,7 @@ app.include_router(
 @app.get("/")
 def root():
     return {
-        "message": "Welcome to Novel IDE Backend",
+        "message": "Welcome to NovelCat Backend",
         "docs": "/docs",
         "redoc": "/redoc",
         "api": app_settings.API_V1_STR,

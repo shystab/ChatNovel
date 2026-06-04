@@ -2,6 +2,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AIWSRequest, AIWSMessage } from "@/types/api";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api/v1/ai/ws";
+const ACCESS_TOKEN = process.env.NEXT_PUBLIC_APP_ACCESS_TOKEN || "";
+const AUTH_TOKEN_KEY = "chatnovel-auth-token";
+
+function withAccessToken(url: string) {
+  const parsed = new URL(url);
+  if (ACCESS_TOKEN) parsed.searchParams.set("access_token", ACCESS_TOKEN);
+  const authToken = typeof window === "undefined" ? "" : localStorage.getItem(AUTH_TOKEN_KEY) || "";
+  if (authToken) parsed.searchParams.set("auth_token", authToken);
+  return parsed.toString();
+}
 
 type WebSocketHandlers = {
   onToken?: (token: string) => void;
@@ -27,7 +37,7 @@ export function useWebSocket() {
     setAiSuggestion("");
     setError(null);
 
-    const ws = new WebSocket(WS_BASE_URL);
+    const ws = new WebSocket(withAccessToken(WS_BASE_URL));
     wsRef.current = ws;
     let settled = false;
 

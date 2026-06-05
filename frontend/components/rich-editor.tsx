@@ -152,37 +152,22 @@ export default function RichEditor({
   } disabled:opacity-35 disabled:cursor-not-allowed`;
 
   const hasBackground = Boolean(appearance?.background_url);
-  const backgroundDim = Math.min(Math.max(appearance?.background_dim ?? 22, 0), 85) / 100;
-  const paperOpacity = Math.min(Math.max(appearance?.editor_paper_opacity ?? 92, 55), 100) / 100;
+  const rawPaperOpacity = Math.min(Math.max(appearance?.editor_paper_opacity ?? 92, 55), 100) / 100;
+  const paperOpacity = hasBackground ? Math.min(rawPaperOpacity, 0.38) : rawPaperOpacity;
   const paperBg = theme === 'dark'
     ? `rgba(15, 23, 42, ${paperOpacity})`
     : theme === 'sepia'
     ? `rgba(255, 251, 235, ${paperOpacity})`
+    : hasBackground
+    ? `rgba(255, 255, 255, ${paperOpacity})`
     : `rgba(255, 255, 255, ${paperOpacity})`;
   const chromeBg = hasBackground
-    ? theme === 'dark' ? 'bg-slate-950/70 backdrop-blur-xl' : theme === 'sepia' ? 'bg-amber-50/78 backdrop-blur-xl' : 'bg-white/78 backdrop-blur-xl'
+    ? theme === 'dark' ? 'bg-slate-950/55 backdrop-blur-2xl' : theme === 'sepia' ? 'bg-amber-950/25 backdrop-blur-2xl' : 'bg-slate-950/32 backdrop-blur-2xl'
     : colors.editorBg;
-  const backgroundLayers = hasBackground ? (
-    <>
-      <div
-        className="absolute inset-0 z-0 bg-cover bg-center"
-        style={{
-          backgroundImage: `url(${appearance?.background_url})`,
-          filter: `blur(${appearance?.background_blur ?? 0}px)`,
-          transform: `scale(${appearance?.background_blur ? 1.04 : 1})`,
-        }}
-      />
-      <div
-        className="absolute inset-0 z-0"
-        style={{ backgroundColor: `rgba(0, 0, 0, ${backgroundDim})` }}
-      />
-    </>
-  ) : null;
 
   if (!chapter) {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center ${colors.editorBg} space-y-6 h-full relative overflow-hidden`}>
-        {backgroundLayers}
+      <div className={`flex-1 flex flex-col items-center justify-center ${hasBackground ? "bg-transparent" : colors.editorBg} space-y-6 h-full relative overflow-hidden`}>
         <div className={`relative z-10 w-16 h-16 rounded-lg ${theme === 'dark' ? 'bg-slate-800/80' : 'bg-slate-50/90'} flex items-center justify-center`}>
           <FileText size={28} strokeWidth={1.5} className={theme === 'dark' ? 'text-slate-600' : 'text-slate-300'} />
         </div>
@@ -195,8 +180,7 @@ export default function RichEditor({
   }
 
   return (
-    <div className={`flex flex-col h-full ${colors.editorBg} relative overflow-hidden`}>
-      {backgroundLayers}
+    <div className={`flex flex-col h-full ${hasBackground ? "bg-transparent" : colors.editorBg} relative overflow-hidden`}>
       {/* 顶部工具栏 */}
       <header className={`px-5 py-2.5 border-b ${borderClass} flex justify-between items-center ${chromeBg} z-30 shrink-0`}>
         {/* 左侧：章节标题 */}
@@ -331,10 +315,16 @@ export default function RichEditor({
 
       {/* 编辑区 — 舒适的阅读宽度 + 大行距 */}
       <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10" onKeyDown={handleKeyDown}>
-        <div className="w-full max-w-[820px] mx-auto py-10 sm:py-14 px-4 sm:px-8 min-h-full">
+        <div className="w-full max-w-[860px] mx-auto py-8 sm:py-12 px-4 sm:px-8 min-h-full">
           <div
-            className={`min-h-[72vh] rounded-lg ${hasBackground ? 'shadow-sm ring-1 ring-black/5' : ''}`}
-            style={{ backgroundColor: hasBackground ? paperBg : 'transparent', backdropFilter: hasBackground ? 'blur(12px)' : undefined }}
+            className={`min-h-[72vh] rounded-[18px] ${hasBackground ? 'shadow-2xl shadow-black/18 ring-1 ring-white/30 border border-white/22' : ''}`}
+            style={{
+              backgroundColor: hasBackground ? paperBg : 'transparent',
+              backdropFilter: hasBackground ? 'blur(18px) saturate(1.32) contrast(1.02)' : undefined,
+              boxShadow: hasBackground
+                ? 'inset 0 1px 0 rgba(255,255,255,0.56), inset 0 -1px 0 rgba(255,255,255,0.12), 0 24px 70px rgba(0,0,0,0.18)'
+                : undefined,
+            }}
           >
           <style>{`
             .novel-writing-surface {

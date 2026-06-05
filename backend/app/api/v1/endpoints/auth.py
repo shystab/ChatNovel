@@ -26,7 +26,15 @@ router = APIRouter()
 def _auth_response(user: User) -> AuthResponse:
     return AuthResponse(
         access_token=create_auth_token(user),
-        user=AuthUser(username=user.username, is_admin=user.is_admin),
+        user=AuthUser(
+            username=user.username,
+            display_name=user.display_name,
+            bio=user.bio,
+            current_work=user.current_work,
+            avatar_color=user.avatar_color or "#f97316",
+            avatar_image_path=user.avatar_image_path,
+            is_admin=user.is_admin,
+        ),
     )
 
 
@@ -62,7 +70,21 @@ def login(
 
 
 @router.get("/me", response_model=AuthUser)
-def me(current_user: Annotated[CurrentUser, Depends(get_current_user)]):
+def me(
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    user = session.get(User, current_user.username)
+    if user:
+        return AuthUser(
+            username=user.username,
+            display_name=user.display_name,
+            bio=user.bio,
+            current_work=user.current_work,
+            avatar_color=user.avatar_color or "#f97316",
+            avatar_image_path=user.avatar_image_path,
+            is_admin=user.is_admin,
+        )
     return AuthUser(username=current_user.username, is_admin=current_user.is_admin)
 
 

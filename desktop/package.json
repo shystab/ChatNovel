@@ -1,8 +1,8 @@
 {
-  "name": "novel-ide-desktop",
+  "name": "novelcat-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron shell for Novel IDE",
+  "description": "Electron shell for NovelCat",
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
@@ -18,8 +18,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.shysta.novelide",
-    "productName": "Novel IDE",
+    "appId": "com.shysta.novelcat",
+    "productName": "NovelCat",
     "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "dist"

@@ -1,13 +1,16 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import Link from "next/link";
 import ChapterList from "@/components/chapter-list";
 import NovelEditor from "@/components/novel-editor";
 import AIChat from "@/components/ai-chat";
 import BookSelector from "@/components/book-selector";
 import { api, getStoredUser, withAccessToken } from "@/lib/api";
 import { AuthUser, Book, Chapter, EditorAppearance } from "@/types/api";
-import { LogOut, PanelLeftOpen, PanelRightOpen, UserRound } from "lucide-react";
+import { LogOut, PanelLeftOpen, PanelRightOpen, Users } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 
 const SESSION_KEY = "novelcat_session";
@@ -55,6 +58,10 @@ function textToEditorHtml(value: string) {
     .join("");
 }
 
+function userInitials(user: AuthUser) {
+  return (user.display_name || user.username || "?").slice(0, 2).toUpperCase();
+}
+
 export default function Home() {
   // ── 书籍状态 ──────────────────────────────────────
   const [books, setBooks] = useState<Book[]>([]);
@@ -91,6 +98,11 @@ export default function Home() {
         setShowLeft(savedSession.showLeft);
         setShowRight(savedSession.showRight);
       }
+
+      try {
+        const user = await api.me().catch(() => null);
+        if (user) setCurrentUser(user);
+      } catch {}
 
       try {
         const settings = await api.getSettings();
@@ -433,18 +445,46 @@ export default function Home() {
     showRight ? "8px" : "",
     showRight ? `${rightWidth}px` : "",
   ].filter(Boolean).join(" ");
+  const hasWorkspaceBackground = Boolean(editorAppearance.background_url);
+  const backgroundDim = Math.min(Math.max(editorAppearance.background_dim ?? 22, 0), 85) / 100;
+  const glassTextClass = hasWorkspaceBackground
+    ? "text-slate-100"
+    : colors.text;
+  const avatarUrl = currentUser?.avatar_image_path
+    ? api.avatarUrl(currentUser.username, currentUser.avatar_image_path)
+    : "";
 
   return (
-    <main className={`flex min-h-screen h-screen overflow-hidden ${colors.text} ${colors.bg} flex-col`}>
+    <main className={`relative flex min-h-screen h-screen overflow-hidden ${glassTextClass} ${hasWorkspaceBackground ? "novelcat-glass-workspace" : colors.bg} flex-col`}>
+      {hasWorkspaceBackground && (
+        <>
+          <div
+            className="absolute inset-0 z-0 bg-cover bg-center"
+            style={{
+              backgroundImage: `url(${editorAppearance.background_url})`,
+              filter: `blur(${editorAppearance.background_blur ?? 0}px) saturate(1.08)`,
+              transform: `scale(${editorAppearance.background_blur ? 1.05 : 1})`,
+            }}
+          />
+          <div
+            className="absolute inset-0 z-0"
+            style={{
+              background:
+                `linear-gradient(90deg, rgba(2,6,23,${Math.max(backgroundDim + 0.28, 0.50)}), rgba(15,23,42,${Math.max(backgroundDim + 0.14, 0.38)}) 42%, rgba(2,6,23,${Math.max(backgroundDim + 0.22, 0.46)})), linear-gradient(135deg, rgba(236,72,153,0.16), transparent 38%, rgba(59,130,246,0.18))`,
+            }}
+          />
+          <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_22%_18%,rgba(255,255,255,0.18),transparent_28%),radial-gradient(circle_at_82%_12%,rgba(236,72,153,0.22),transparent_24%),radial-gradient(circle_at_76%_80%,rgba(59,130,246,0.24),transparent_32%),linear-gradient(115deg,rgba(255,255,255,0.10),transparent_42%,rgba(255,255,255,0.08))]" />
+        </>
+      )}
       <div
-        className="grid flex-1 min-h-0 w-full"
+        className="relative z-10 grid flex-1 min-h-0 w-full"
         style={{ gridTemplateColumns }}
       >
 
         {/* 左侧：书籍选择器 + 章节列表 */}
         {showLeft && (
           <>
-            <aside id="left-sidebar" className="min-w-0 overflow-hidden">
+            <aside id="left-sidebar" className={`min-w-0 overflow-hidden ${hasWorkspaceBackground ? "p-2 pr-0" : ""}`}>
               <div className="flex flex-col h-full">
                 {/* 书籍选择器 */}
                 <BookSelector
@@ -463,8 +503,38 @@ export default function Home() {
                       ? "border-amber-200 bg-amber-50 text-amber-800"
                       : "border-slate-200 bg-slate-50 text-slate-600"
                   }`}>
-                    <UserRound size={13} className="shrink-0" />
-                    <span className="min-w-0 flex-1 truncate text-xs font-semibold">{currentUser.username}</span>
+                    <div
+                      className="relative h-6 w-6 shrink-0 overflow-hidden rounded-md text-[10px] font-bold text-white shadow-sm"
+                      style={{ backgroundColor: currentUser.avatar_color || "#f97316" }}
+                    >
+                      <div className="flex h-full w-full items-center justify-center">{userInitials(currentUser)}</div>
+                      {avatarUrl && (
+                        <img
+                          src={avatarUrl}
+                          alt=""
+                          onError={(event) => {
+                            event.currentTarget.style.display = "none";
+                          }}
+                          className="absolute inset-0 h-full w-full object-cover"
+                        />
+                      )}
+                    </div>
+                    <span className="min-w-0 flex-1 truncate text-xs font-semibold">
+                      {currentUser.display_name || currentUser.username}
+                    </span>
+                    <Link
+                      href="/people"
+                      title="伙伴"
+                      className={`p-1 rounded transition-colors ${
+                        theme === "dark"
+                          ? "hover:bg-slate-800 hover:text-slate-100"
+                          : theme === "sepia"
+                          ? "hover:bg-amber-100 hover:text-amber-950"
+                          : "hover:bg-white hover:text-slate-900"
+                      }`}
+                    >
+                      <Users size={13} />
+                    </Link>
                     <button
                       type="button"
                       onClick={handleLogout}
@@ -502,7 +572,7 @@ export default function Home() {
 
         {/* 中间：编辑器 */}
         <section id="editor" className="min-w-0 overflow-hidden">
-          <div className={`flex flex-col h-full relative ${colors.editorBg}`}>
+          <div className="flex flex-col h-full relative">
             <NovelEditor
               chapter={chapter}
               content={content}
@@ -528,7 +598,7 @@ export default function Home() {
         {showRight && (
           <>
             {resizeHandle("right-resize", "right")}
-            <aside id="ai-sidebar" className="min-w-0 overflow-hidden">
+            <aside id="ai-sidebar" className={`min-w-0 overflow-hidden ${hasWorkspaceBackground ? "p-2 pl-0" : ""}`}>
               <AIChat
                 onInsertContent={insertContent}
                 onReplaceContent={replaceContent}

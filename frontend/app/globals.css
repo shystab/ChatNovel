@@ -196,3 +196,125 @@ body {
 .sepia .ProseMirror code {
   background-color: #fef3c7;
 }
+
+/* Full-workspace glass mode, used when the writing background image is enabled. */
+.novelcat-glass-workspace #left-sidebar > div,
+.novelcat-glass-workspace #ai-sidebar > div {
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(15, 23, 42, 0.24) 42%, rgba(255, 255, 255, 0.08)),
+    rgba(2, 6, 23, 0.30);
+  backdrop-filter: blur(28px) saturate(1.65) contrast(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.54),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.14),
+    0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.novelcat-glass-workspace #left-sidebar > div::before,
+.novelcat-glass-workspace #ai-sidebar > div::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(255, 255, 255, 0.32), transparent 30%),
+    linear-gradient(100deg, rgba(255, 255, 255, 0.24), transparent 24%, rgba(236, 72, 153, 0.12) 62%, rgba(59, 130, 246, 0.12) 78%, transparent);
+  mix-blend-mode: screen;
+}
+
+.novelcat-glass-workspace #left-sidebar > div > *,
+.novelcat-glass-workspace #ai-sidebar > div > * {
+  position: relative;
+  z-index: 2;
+}
+
+.novelcat-glass-workspace #left-sidebar *,
+.novelcat-glass-workspace #ai-sidebar * {
+  color-scheme: dark;
+}
+
+.novelcat-glass-workspace #left-sidebar > div {
+  border-radius: 0 10px 10px 0;
+}
+
+.novelcat-glass-workspace #ai-sidebar > div {
+  border-radius: 10px 0 0 10px;
+}
+
+.novelcat-glass-workspace #left-sidebar [class*="bg-white"],
+.novelcat-glass-workspace #left-sidebar [class*="bg-slate-50"],
+.novelcat-glass-workspace #left-sidebar [class*="bg-slate-100"],
+.novelcat-glass-workspace #left-sidebar [class*="bg-amber-50"],
+.novelcat-glass-workspace #left-sidebar [class*="bg-amber-100"],
+.novelcat-glass-workspace #ai-sidebar [class*="bg-white"],
+.novelcat-glass-workspace #ai-sidebar [class*="bg-slate-50"],
+.novelcat-glass-workspace #ai-sidebar [class*="bg-slate-100"],
+.novelcat-glass-workspace #ai-sidebar [class*="bg-amber-50"],
+.novelcat-glass-workspace #ai-sidebar [class*="bg-amber-100"] {
+  background-color: rgba(15, 23, 42, 0.22) !important;
+  backdrop-filter: blur(14px) saturate(1.35);
+}
+
+.novelcat-glass-workspace #left-sidebar [class*="border-slate"],
+.novelcat-glass-workspace #left-sidebar [class*="border-amber"],
+.novelcat-glass-workspace #ai-sidebar [class*="border-slate"],
+.novelcat-glass-workspace #ai-sidebar [class*="border-amber"] {
+  border-color: rgba(255, 255, 255, 0.30) !important;
+}
+
+.novelcat-glass-workspace #ai-sidebar > div > div:first-child,
+.novelcat-glass-workspace #left-sidebar > div > div:first-child {
+  background-color: rgba(15, 23, 42, 0.16) !important;
+}
+
+.novelcat-glass-workspace #ai-sidebar [class*="bg-slate-900"],
+.novelcat-glass-workspace #ai-sidebar [class*="bg-slate-800"],
+.novelcat-glass-workspace #ai-sidebar [class*="bg-slate-700"],
+.novelcat-glass-workspace #left-sidebar [class*="bg-slate-900"],
+.novelcat-glass-workspace #left-sidebar [class*="bg-slate-800"],
+.novelcat-glass-workspace #left-sidebar [class*="bg-slate-700"] {
+  background-color: rgba(15, 23, 42, 0.24) !important;
+}
+
+.novelcat-glass-workspace #editor header,
+.novelcat-glass-workspace #editor > div,
+.novelcat-glass-workspace #editor footer {
+  background-color: rgba(15, 23, 42, 0.20) !important;
+}
+
+.novelcat-glass-workspace #left-sidebar [class*="text-slate-900"],
+.novelcat-glass-workspace #left-sidebar [class*="text-slate-800"],
+.novelcat-glass-workspace #left-sidebar [class*="text-slate-700"],
+.novelcat-glass-workspace #left-sidebar [class*="text-slate-600"],
+.novelcat-glass-workspace #left-sidebar [class*="text-amber-900"],
+.novelcat-glass-workspace #left-sidebar [class*="text-amber-800"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-slate-900"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-slate-800"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-slate-700"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-slate-600"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-amber-900"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-amber-800"] {
+  color: rgba(248, 250, 252, 0.90) !important;
+}
+
+.novelcat-glass-workspace #left-sidebar [class*="text-slate-500"],
+.novelcat-glass-workspace #left-sidebar [class*="text-slate-400"],
+.novelcat-glass-workspace #left-sidebar [class*="text-amber-600"],
+.novelcat-glass-workspace #left-sidebar [class*="text-amber-500"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-slate-500"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-slate-400"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-amber-600"],
+.novelcat-glass-workspace #ai-sidebar [class*="text-amber-500"] {
+  color: rgba(203, 213, 225, 0.72) !important;
+}
+
+.novelcat-glass-workspace input,
+.novelcat-glass-workspace textarea {
+  color: rgba(248, 250, 252, 0.92) !important;
+}

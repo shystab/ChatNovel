@@ -162,6 +162,34 @@ def delete_background_image(relative_path: str | None) -> None:
         return
 
 
+def user_assets_folder(username: str) -> Path:
+    folder = workspace_root() / ".assets" / "users" / safe_filename(username, "user")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def save_user_asset(username: str, kind: str, filename: str, data: bytes, stem: str | None = None) -> str:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        suffix = ".jpg"
+
+    folder = user_assets_folder(username) / safe_filename(kind, "asset")
+    folder.mkdir(parents=True, exist_ok=True)
+    name = safe_filename(stem or datetime.utcnow().strftime("%Y%m%d%H%M%S%f"), "asset")
+    path = folder / f"{name}{suffix}"
+    path.write_bytes(data)
+    return workspace_relative_path(path)
+
+
+def delete_user_asset(relative_path: str | None) -> None:
+    if not relative_path:
+        return
+    try:
+        resolve_workspace_relative_path(relative_path).unlink(missing_ok=True)
+    except ValueError:
+        return
+
+
 def book_folder(book: Book | None, book_id: int | None = None) -> Path:
     if book:
         name = f"{book.id:03d}-{safe_filename(book.title, 'book')}"

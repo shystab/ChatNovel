@@ -134,6 +134,134 @@ def main() -> None:
         settings_b = json_ok(client, "GET", f"{API}/settings/", token=bob_token)
         require(settings_a["user_id"] == "alice" and settings_b["user_id"] == "bob", "settings should be user-scoped")
 
+        profile = json_ok(
+            client,
+            "PATCH",
+            f"{API}/users/me",
+            token=admin_token,
+            json={
+                "display_name": "Alice Writer",
+                "bio": "writes moon cities",
+                "current_work": "a moon city novella",
+                "avatar_color": "#fb7185",
+            },
+        )
+        require(profile["display_name"] == "Alice Writer", "user profile should update")
+        require(profile["current_work"] == "a moon city novella", "current work should update")
+
+        avatar_upload = request(
+            client,
+            "POST",
+            f"{API}/users/me/avatar",
+            token=admin_token,
+            files={"file": ("avatar.png", b"fake-image", "image/png")},
+        )
+        require(avatar_upload.status_code < 400, "avatar upload should work")
+        avatar_file = request(
+            client,
+            "GET",
+            f"{API}/users/alice/avatar",
+            params={"auth_token": admin_token},
+        )
+        require(avatar_file.status_code == 200, "avatar file should accept auth_token query param")
+        avatar_upload_again = request(
+            client,
+            "POST",
+            f"{API}/users/me/avatar",
+            token=admin_token,
+            files={"file": ("avatar.png", b"fake-image-2", "image/png")},
+        )
+        require(avatar_upload_again.status_code < 400, "avatar re-upload should work")
+        avatar_file_again = request(
+            client,
+            "GET",
+            f"{API}/users/alice/avatar",
+            params={"auth_token": admin_token},
+        )
+        require(avatar_file_again.status_code == 200, "avatar re-upload should not delete the saved file")
+
+        bob_users = json_ok(client, "GET", f"{API}/users/", token=bob_token)
+        require(any(item["username"] == "alice" for item in bob_users), "users list should show other active users")
+        require(all(item["username"] != "bob" for item in bob_users), "users list should hide current user")
+
+        message = json_ok(
+            client,
+            "POST",
+            f"{API}/users/messages",
+            token=bob_token,
+            json={"to_user": "alice", "content": "hello from bob"},
+        )
+        require(message["sender_username"] == "bob" and message["recipient_username"] == "alice", "direct message should send")
+
+        thread = json_ok(
+            client,
+            "GET",
+            f"{API}/users/messages",
+            token=admin_token,
+            params={"with_user": "bob"},
+        )
+        require(thread and thread[0]["content"] == "hello from bob", "direct message thread should load")
+
+        card = json_ok(
+            client,
+            "POST",
+            f"{API}/users/showcases",
+            token=admin_token,
+            json={
+                "title": "Moon City",
+                "subtitle": "alpha fragment",
+                "excerpt": "silver gate",
+                "content": "The silver gate opened under the moon.",
+                "is_public": True,
+            },
+        )
+        require(card["user_id"] == "alice", "showcase card should belong to current user")
+
+        public_cards = json_ok(client, "GET", f"{API}/users/alice/showcases", token=bob_token)
+        require(public_cards and public_cards[0]["title"] == "Moon City", "public showcase should be visible to friends")
+
+        cover_upload = request(
+            client,
+            "POST",
+            f"{API}/users/showcases/{card['id']}/cover",
+            token=admin_token,
+            files={"file": ("cover.png", b"fake-cover", "image/png")},
+        )
+        require(cover_upload.status_code < 400, "showcase cover upload should work")
+        cover_file = request(
+            client,
+            "GET",
+            f"{API}/users/showcases/{card['id']}/cover",
+            params={"auth_token": admin_token},
+        )
+        require(cover_file.status_code == 200, "showcase cover should accept auth_token query param")
+        cover_upload_again = request(
+            client,
+            "POST",
+            f"{API}/users/showcases/{card['id']}/cover",
+            token=admin_token,
+            files={"file": ("cover.png", b"fake-cover-2", "image/png")},
+        )
+        require(cover_upload_again.status_code < 400, "showcase cover re-upload should work")
+        cover_file_again = request(
+            client,
+            "GET",
+            f"{API}/users/showcases/{card['id']}/cover",
+            params={"auth_token": admin_token},
+        )
+        require(cover_file_again.status_code == 200, "showcase cover re-upload should not delete the saved file")
+
+        hidden = json_ok(
+            client,
+            "PATCH",
+            f"{API}/users/showcases/{card['id']}",
+            token=admin_token,
+            json={"is_public": False},
+        )
+        require(hidden["is_public"] is False, "showcase visibility should update")
+        hidden_from_bob = json_ok(client, "GET", f"{API}/users/alice/showcases", token=bob_token)
+        require(all(item["id"] != card["id"] for item in hidden_from_bob), "hidden showcase should not be visible to friends")
+
         upload_without_vector = request(
             client,
             "POST",

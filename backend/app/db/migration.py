@@ -98,6 +98,12 @@ def _migrate_columns(session: Session) -> None:
     _add_column_if_missing(session, "conversation", "selected_doc_ids", "JSON DEFAULT '[]'")
     _add_column_if_missing(session, "preset", "user_id", "VARCHAR DEFAULT 'default_user'")
 
+    _add_column_if_missing(session, "user", "display_name", "VARCHAR")
+    _add_column_if_missing(session, "user", "bio", "VARCHAR")
+    _add_column_if_missing(session, "user", "current_work", "VARCHAR")
+    _add_column_if_missing(session, "user", "avatar_color", "VARCHAR DEFAULT '#f97316'")
+    _add_column_if_missing(session, "user", "avatar_image_path", "VARCHAR")
+
 
 def _ensure_default_book(session: Session) -> int:
     books = session.exec(select(Book)).all()

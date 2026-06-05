@@ -73,7 +73,73 @@ export interface ConversationUpdate {
 // ── Auth ────────────────────────────────────────
 export interface AuthUser {
   username: string;
+  display_name?: string | null;
+  bio?: string | null;
+  current_work?: string | null;
+  avatar_color?: string;
+  avatar_image_path?: string | null;
   is_admin: boolean;
+}
+
+export interface UserProfile {
+  username: string;
+  display_name?: string | null;
+  bio?: string | null;
+  current_work?: string | null;
+  avatar_color: string;
+  avatar_image_path?: string | null;
+  is_admin: boolean;
+  is_active: boolean;
+  created_at: string;
+  last_login_at?: string | null;
+}
+
+export interface UserProfileUpdate {
+  display_name?: string | null;
+  bio?: string | null;
+  current_work?: string | null;
+  avatar_color?: string | null;
+}
+
+export interface DirectMessage {
+  id: number;
+  sender_username: string;
+  recipient_username: string;
+  content: string;
+  created_at: string;
+  read_at?: string | null;
+}
+
+export interface ShowcaseCard {
+  id: number;
+  user_id: string;
+  title: string;
+  subtitle?: string | null;
+  excerpt: string;
+  content: string;
+  cover_image_path?: string | null;
+  is_public: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShowcaseCardCreate {
+  title: string;
+  subtitle?: string | null;
+  excerpt?: string | null;
+  content?: string | null;
+  is_public?: boolean;
+  sort_order?: number;
+}
+
+export interface ShowcaseCardUpdate {
+  title?: string | null;
+  subtitle?: string | null;
+  excerpt?: string | null;
+  content?: string | null;
+  is_public?: boolean;
+  sort_order?: number;
 }
 
 export interface AuthResponse {

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel, Session
 
-from app.api.v1.endpoints import auth, chapters, settings, ai, memory, knowledge, finetune, presets
+from app.api.v1.endpoints import auth, chapters, settings, ai, memory, knowledge, finetune, presets, users
 from app.api.v1.endpoints import books as books_ep, conversations as conversations_ep
 from app.db.session import engine
 from app.db.migration import run_startup_migration
@@ -46,6 +46,13 @@ app.include_router(
     auth.router,
     prefix=f"{app_settings.API_V1_STR}/auth",
     tags=["auth"]
+)
+
+# 注册用户资料和轻量互动路由
+app.include_router(
+    users.router,
+    prefix=f"{app_settings.API_V1_STR}/users",
+    tags=["users"]
 )
 
 # 注册章节路由

@@ -99,7 +99,12 @@ def create_user(session: Session, username: str, password: str, *, is_admin: boo
         raise HTTPException(status_code=422, detail="密码至少需要 8 位")
     if session.get(User, username):
         raise HTTPException(status_code=409, detail="用户名已存在")
-    user = User(username=username, password_hash=hash_password(password), is_admin=is_admin)
+    user = User(
+        username=username,
+        password_hash=hash_password(password),
+        display_name=username,
+        is_admin=is_admin,
+    )
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -150,7 +155,8 @@ def _extract_bearer_token(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
-    return None
+    query_token = request.query_params.get(AUTH_QUERY_NAME)
+    return query_token.strip() if query_token else None
 
 
 def get_current_user(

@@ -20,7 +20,13 @@ import {
   PersonaUpdate,
   AuthResponse,
   AuthUser,
+  DirectMessage,
   InviteCode,
+  ShowcaseCard,
+  ShowcaseCardCreate,
+  ShowcaseCardUpdate,
+  UserProfile,
+  UserProfileUpdate,
 } from "@/types/api";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -40,6 +46,11 @@ export function setAuthSession(auth: AuthResponse) {
   if (typeof window === "undefined") return;
   localStorage.setItem(AUTH_TOKEN_KEY, auth.access_token);
   localStorage.setItem(AUTH_USER_KEY, JSON.stringify(auth.user));
+}
+
+export function setStoredUser(user: AuthUser) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
 }
 
 export function clearAuthSession() {
@@ -132,6 +143,65 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ max_uses: maxUses, expires_days: expiresDays }),
+    }),
+  listUsers: () => req<UserProfile[]>(`${BASE}/users/`),
+  getMyProfile: () => req<UserProfile>(`${BASE}/users/me`),
+  updateMyProfile: (profile: UserProfileUpdate) =>
+    req<UserProfile>(`${BASE}/users/me`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile),
+    }),
+  uploadMyAvatar: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return req<UserProfile>(`${BASE}/users/me/avatar`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  deleteMyAvatar: () =>
+    req<UserProfile>(`${BASE}/users/me/avatar`, { method: "DELETE" }),
+  getUserProfile: (username: string) =>
+    req<UserProfile>(`${BASE}/users/${encodeURIComponent(username)}/profile`),
+  listUserShowcases: (username: string) =>
+    req<ShowcaseCard[]>(`${BASE}/users/${encodeURIComponent(username)}/showcases`),
+  listMyShowcases: () => req<ShowcaseCard[]>(`${BASE}/users/showcases/me`),
+  createShowcase: (data: ShowcaseCardCreate) =>
+    req<ShowcaseCard>(`${BASE}/users/showcases`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  updateShowcase: (id: number, data: ShowcaseCardUpdate) =>
+    req<ShowcaseCard>(`${BASE}/users/showcases/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  deleteShowcase: (id: number) =>
+    req<void>(`${BASE}/users/showcases/${id}`, { method: "DELETE" }),
+  uploadShowcaseCover: (id: number, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return req<ShowcaseCard>(`${BASE}/users/showcases/${id}/cover`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  avatarUrl: (username: string, version?: string | number | null) =>
+    withAccessToken(`${BASE}/users/${encodeURIComponent(username)}/avatar?v=${encodeURIComponent(String(version || Date.now()))}`),
+  showcaseCoverUrl: (id: number, version?: string | number | null) =>
+    withAccessToken(`${BASE}/users/showcases/${id}/cover?v=${encodeURIComponent(String(version || Date.now()))}`),
+  listDirectMessages: (withUser: string, limit: number = 80) =>
+    req<DirectMessage[]>(
+      `${BASE}/users/messages?with_user=${encodeURIComponent(withUser)}&limit=${limit}`
+    ),
+  sendDirectMessage: (toUser: string, content: string) =>
+    req<DirectMessage>(`${BASE}/users/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to_user: toUser, content }),
     }),
 
   // ── Books ──────────────────────────────────────

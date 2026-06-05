@@ -207,6 +207,69 @@ backend/.secret.key
 - [Server Web Alpha 部署说明](docs/server-deploy-alpha.md)
 - [Server Version 改造计划](docs/server-version-plan.md)
 
+### 服务器部署常见问题
+
+我们实际部署时遇到的问题，主要属于“部署配置 / 旧前端构建 / 浏览器缓存”这一类，不是 FastAPI 业务代码本身坏了。
+
+服务器部署时推荐这样分工：
+
+```text
+浏览器访问 http://你的服务器
+Nginx / Caddy:
+  /api/*  -> 127.0.0.1:8000  后端 FastAPI
+  /*      -> 127.0.0.1:3000  前端 Next.js
+```
+
+也就是说，浏览器应该请求：
+
+```text
+http://你的服务器/api/v1/...
+```
+
+而不是：
+
+```text
+http://你的服务器:8000/api/v1/...
+```
+
+如果浏览器控制台出现 `CORS policy`、`Failed to fetch`，并且请求地址里带着 `:8000`，通常是这几种情况：
+
+- 前端 `.env.local` 里的 `NEXT_PUBLIC_API_URL` 仍然写成了 `http://你的服务器:8000/api/v1`。
+- 修改 `.env.local` 后没有重新执行 `npm run build`，线上还在跑旧前端包。
+- Nginx / Caddy 没有把 `/api/*` 正确反代到 `127.0.0.1:8000`。
+- 浏览器缓存或旧页面脚本还在请求旧地址。
+
+推荐修法：
+
+```env
+NEXT_PUBLIC_API_URL=http://你的服务器/api/v1
+NEXT_PUBLIC_WS_URL=ws://你的服务器/api/v1/ai/ws
+```
+
+如果有 HTTPS 域名，则改成：
+
+```env
+NEXT_PUBLIC_API_URL=https://你的域名/api/v1
+NEXT_PUBLIC_WS_URL=wss://你的域名/api/v1/ai/ws
+```
+
+然后重新构建并重启前端：
+
+```bash
+cd frontend
+npm run build
+npm run start -- -H 127.0.0.1 -p 3000
+```
+
+如果打开网站没有进入登录页，而是直接进了小说界面，优先检查：
+
+- 后端 `.env` 是否有 `AUTH_REQUIRED=true`。
+- 后端是否已经重启。
+- 前端是否重新 build。
+- 浏览器是否还缓存旧页面，尝试强制刷新或换无痕窗口。
+
+不推荐把服务器的 `8000` 端口直接开放给公网。开放 `8000` 只能临时排查问题，正式使用更推荐让浏览器只访问 `80/443`，后端端口只在服务器本机监听。
+
 ## 开发者命令
 
 后端：

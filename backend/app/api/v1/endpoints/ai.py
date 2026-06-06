@@ -146,6 +146,9 @@ async def ai_ws(websocket: WebSocket):
             buffer = ""
             since_last_analysis = 0
             for chunk in stream:
+                if isinstance(chunk, dict):
+                    await websocket.send_json(chunk)
+                    continue
                 buffer += chunk
                 since_last_analysis += len(chunk)
                 await websocket.send_json({"type": "token", "text": chunk})

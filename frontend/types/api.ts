@@ -78,6 +78,7 @@ export interface AuthUser {
   current_work?: string | null;
   avatar_color?: string;
   avatar_image_path?: string | null;
+  show_background_on_profile?: boolean;
   is_admin: boolean;
 }
 
@@ -88,6 +89,7 @@ export interface UserProfile {
   current_work?: string | null;
   avatar_color: string;
   avatar_image_path?: string | null;
+  show_background_on_profile: boolean;
   is_admin: boolean;
   is_active: boolean;
   created_at: string;
@@ -99,6 +101,7 @@ export interface UserProfileUpdate {
   bio?: string | null;
   current_work?: string | null;
   avatar_color?: string | null;
+  show_background_on_profile?: boolean;
 }
 
 export interface DirectMessage {
@@ -331,9 +334,20 @@ export interface KnowledgeReindexResult {
   retrieval_mode: "vector";
 }
 
+export interface AIAgentStep {
+  id: string;
+  phase: "context" | "planning" | "tool" | "generating";
+  status: "running" | "completed" | "failed";
+  title: string;
+  detail?: string;
+  query?: string;
+  content?: string;
+}
+
 export type AIWSMessage =
   | { type: "token"; text: string }
   | { type: "analysis"; data: unknown }
+  | { type: "agent_step"; step: AIAgentStep }
   | { type: "done" }
   | { type: "error"; message: string };
 

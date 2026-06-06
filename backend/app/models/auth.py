@@ -14,6 +14,7 @@ class User(SQLModel, table=True):
     current_work: Annotated[str | None, Field(default=None, max_length=240)] = None
     avatar_color: Annotated[str, Field(default="#f97316", max_length=24)] = "#f97316"
     avatar_image_path: Annotated[str | None, Field(default=None, max_length=500)] = None
+    show_background_on_profile: bool = False
     is_admin: bool = False
     is_active: bool = True
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -37,6 +38,7 @@ class AuthUser(SQLModel):
     current_work: str | None = None
     avatar_color: str = "#f97316"
     avatar_image_path: str | None = None
+    show_background_on_profile: bool = False
     is_admin: bool = False
 
 
@@ -64,6 +66,7 @@ class UserProfileRead(SQLModel):
     current_work: str | None = None
     avatar_color: str = "#f97316"
     avatar_image_path: str | None = None
+    show_background_on_profile: bool = False
     is_admin: bool = False
     is_active: bool = True
     created_at: datetime
@@ -75,6 +78,7 @@ class UserProfileUpdate(SQLModel):
     bio: Annotated[str | None, Field(default=None, max_length=300)] = None
     current_work: Annotated[str | None, Field(default=None, max_length=240)] = None
     avatar_color: Annotated[str | None, Field(default=None, max_length=24)] = None
+    show_background_on_profile: bool | None = None
 
 
 class InviteCreateRequest(SQLModel):

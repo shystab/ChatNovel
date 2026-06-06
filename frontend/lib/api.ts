@@ -78,6 +78,14 @@ export function withAccessToken(url: string) {
   return parsed.toString();
 }
 
+function assetUrl(url: string, version?: string | number | null) {
+  const parsed = new URL(url, typeof window === "undefined" ? "http://localhost" : window.location.origin);
+  if (version !== undefined && version !== null && version !== "") {
+    parsed.searchParams.set("v", String(version));
+  }
+  return withAccessToken(parsed.toString());
+}
+
 export function authHeaders(headers?: HeadersInit): HeadersInit {
   const authToken = getAuthToken();
   return {
@@ -190,9 +198,11 @@ export const api = {
     });
   },
   avatarUrl: (username: string, version?: string | number | null) =>
-    withAccessToken(`${BASE}/users/${encodeURIComponent(username)}/avatar?v=${encodeURIComponent(String(version || Date.now()))}`),
+    assetUrl(`${BASE}/users/${encodeURIComponent(username)}/avatar`, version),
+  userBackgroundUrl: (username: string, version?: string | number | null) =>
+    assetUrl(`${BASE}/users/${encodeURIComponent(username)}/background`, version),
   showcaseCoverUrl: (id: number, version?: string | number | null) =>
-    withAccessToken(`${BASE}/users/showcases/${id}/cover?v=${encodeURIComponent(String(version || Date.now()))}`),
+    assetUrl(`${BASE}/users/showcases/${id}/cover`, version),
   listDirectMessages: (withUser: string, limit: number = 80) =>
     req<DirectMessage[]>(
       `${BASE}/users/messages?with_user=${encodeURIComponent(withUser)}&limit=${limit}`

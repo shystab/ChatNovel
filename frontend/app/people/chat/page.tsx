@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ArrowLeft, Loader2, RefreshCw, Send, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import type { DirectMessage, UserProfile } from "@/types/api";
+import UserBackgroundShell from "@/components/user-background-shell";
 
 function displayName(user: UserProfile | null) {
   if (!user) return "";
@@ -27,7 +28,7 @@ function Avatar({ user, size = "h-10 w-10" }: { user: UserProfile; size?: string
       <div className="flex h-full w-full items-center justify-center">{initials(user)}</div>
       {hasImage && (
         <img
-          src={api.avatarUrl(user.username)}
+          src={api.avatarUrl(user.username, user.avatar_image_path)}
           alt=""
           onError={(event) => {
             event.currentTarget.style.display = "none";
@@ -74,7 +75,12 @@ export default function PeopleChatPage() {
     ]);
     setMe(profile);
     setUsers(userList);
-    setSelectedUsername((current) => current || userList[0]?.username || "");
+    const requestedUsername = new URLSearchParams(window.location.search).get("with") || "";
+    setSelectedUsername((current) => {
+      if (current) return current;
+      if (userList.some((user) => user.username === requestedUsername)) return requestedUsername;
+      return userList[0]?.username || "";
+    });
   }, []);
 
   const loadMessages = useCallback(async (username: string) => {
@@ -133,9 +139,9 @@ export default function PeopleChatPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f7f1e7] text-slate-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-5">
-        <header className="flex items-center justify-between border-b border-stone-300 pb-4">
+    <UserBackgroundShell dim={64}>
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-5 sm:px-7 sm:py-7">
+        <header className="novelcat-surface flex items-center justify-between rounded-lg px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
               href="/people"
@@ -171,8 +177,8 @@ export default function PeopleChatPage() {
           </div>
         )}
 
-        <section className="grid flex-1 min-h-0 grid-cols-[320px_minmax(0,1fr)] gap-4 py-5">
-          <aside className="min-h-0 overflow-hidden border-r border-stone-300 pr-4">
+        <section className="novelcat-surface mt-5 grid min-h-[620px] flex-1 overflow-hidden rounded-lg md:min-h-0 md:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="min-h-0 overflow-hidden border-r border-slate-200 bg-slate-50/60 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-800">联系人</h2>
               <span className="text-xs text-slate-500">{users.length} 人</span>
@@ -216,7 +222,7 @@ export default function PeopleChatPage() {
             </div>
           </aside>
 
-          <section className="flex min-h-0 flex-col rounded-md border border-stone-300 bg-white shadow-sm">
+          <section className="flex min-h-[480px] flex-col bg-white/92 md:min-h-0">
             {selectedUser ? (
               <>
                 <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
@@ -303,6 +309,6 @@ export default function PeopleChatPage() {
           </section>
         </section>
       </div>
-    </main>
+    </UserBackgroundShell>
   );
 }

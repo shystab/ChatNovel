@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ArrowLeft, Check, Eye, EyeOff, ImagePlus, Loader2, Plus, Save, Trash2, Upload } from "lucide-react";
 import { api, setStoredUser } from "@/lib/api";
 import type { ShowcaseCard, UserProfile } from "@/types/api";
+import UserBackgroundShell from "@/components/user-background-shell";
 
 const AVATAR_COLORS = ["#f97316", "#fb7185", "#a855f7", "#38bdf8", "#22c55e", "#eab308"];
 
@@ -59,6 +60,7 @@ export default function MyPeoplePage() {
         current_work: nextProfile.current_work,
         avatar_color: nextProfile.avatar_color,
         avatar_image_path: nextProfile.avatar_image_path,
+        show_background_on_profile: nextProfile.show_background_on_profile,
         is_admin: nextProfile.is_admin,
       });
       setDisplayNameInput(nextProfile.display_name || nextProfile.username);
@@ -113,6 +115,7 @@ export default function MyPeoplePage() {
         current_work: updated.current_work,
         avatar_color: updated.avatar_color,
         avatar_image_path: updated.avatar_image_path,
+        show_background_on_profile: updated.show_background_on_profile,
         is_admin: updated.is_admin,
       });
       setStatus("主页资料已保存");
@@ -139,6 +142,7 @@ export default function MyPeoplePage() {
         current_work: updated.current_work,
         avatar_color: updated.avatar_color,
         avatar_image_path: updated.avatar_image_path,
+        show_background_on_profile: updated.show_background_on_profile,
         is_admin: updated.is_admin,
       });
       setStatus("头像已更新");
@@ -230,14 +234,14 @@ export default function MyPeoplePage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f7f1e7] text-slate-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-5">
-        <header className="flex items-center justify-between border-b border-stone-300 pb-4">
+    <UserBackgroundShell dim={62}>
+      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-5 sm:px-7 sm:py-7">
+        <header className="novelcat-surface flex items-center justify-between rounded-lg px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
-              href="/people"
+              href="/"
               className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-stone-300 bg-white text-slate-700 shadow-sm hover:bg-stone-50"
-              title="回到伙伴"
+              title="回到写作"
             >
               <ArrowLeft size={18} />
             </Link>
@@ -269,8 +273,8 @@ export default function MyPeoplePage() {
             加载中
           </div>
         ) : (
-          <section className="grid flex-1 min-h-0 grid-cols-[320px_300px_minmax(0,1fr)] gap-4 py-5">
-            <aside className="min-h-0 border-r border-stone-300 pr-4">
+          <section className="grid flex-1 min-h-0 grid-cols-1 gap-4 py-5 xl:grid-cols-[320px_300px_minmax(0,1fr)]">
+            <aside className="novelcat-surface min-h-0 rounded-lg p-4">
               <div className="flex items-center gap-3">
                 <div
                   className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md text-base font-bold text-white shadow-sm"
@@ -281,7 +285,7 @@ export default function MyPeoplePage() {
                   <div className="flex h-full w-full items-center justify-center">{initials(profile)}</div>
                   {profile?.avatar_image_path && (
                     <img
-                      src={api.avatarUrl(profile.username)}
+                      src={api.avatarUrl(profile.username, profile.avatar_image_path)}
                       alt=""
                       onError={(event) => {
                         event.currentTarget.style.display = "none";
@@ -356,7 +360,7 @@ export default function MyPeoplePage() {
               </div>
             </aside>
 
-            <aside className="min-h-0 overflow-hidden border-r border-stone-300 pr-4">
+            <aside className="novelcat-surface min-h-0 overflow-hidden rounded-lg p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-slate-800">展示卡片</h2>
                 <button
@@ -402,7 +406,7 @@ export default function MyPeoplePage() {
               </div>
             </aside>
 
-            <section className="min-h-0 overflow-hidden">
+            <section className="novelcat-surface min-h-0 overflow-hidden rounded-lg p-4">
               {selectedCard ? (
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="mb-4 flex items-center justify-between">
@@ -428,7 +432,7 @@ export default function MyPeoplePage() {
                     </div>
                   </div>
 
-                  <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)] gap-4">
+                  <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
                     <div className="space-y-3">
                       <div
                         className="flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-md border border-stone-300 bg-stone-100 text-sm text-stone-500"
@@ -513,6 +517,6 @@ export default function MyPeoplePage() {
           </section>
         )}
       </div>
-    </main>
+    </UserBackgroundShell>
   );
 }

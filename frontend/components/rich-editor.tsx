@@ -317,7 +317,7 @@ export default function RichEditor({
       <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10" onKeyDown={handleKeyDown}>
         <div className="w-full max-w-[860px] mx-auto py-8 sm:py-12 px-4 sm:px-8 min-h-full">
           <div
-            className={`min-h-[72vh] rounded-[18px] ${hasBackground ? 'shadow-2xl shadow-black/18 ring-1 ring-white/30 border border-white/22' : ''}`}
+            className={`min-h-[72vh] rounded-[10px] ${hasBackground ? 'shadow-lg shadow-black/15 ring-1 ring-white/24 border border-white/18' : ''}`}
             style={{
               backgroundColor: hasBackground ? paperBg : 'transparent',
               backdropFilter: hasBackground ? 'blur(18px) saturate(1.32) contrast(1.02)' : undefined,

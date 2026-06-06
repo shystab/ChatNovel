@@ -3,9 +3,9 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { api, authHeaders } from "@/lib/api";
-import { Send, ArrowLeftRight, Sparkles, ChevronDown, User, PanelRightClose, Library, Trash2, Plus, FileText, Database } from "lucide-react";
+import { Send, ArrowLeftRight, Sparkles, ChevronDown, ChevronUp, User, PanelRightClose, Library, Trash2, Plus, FileText, Database, Search, Loader2, CheckCircle2, XCircle, Brain } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
-import { AgentEditPlan, Chapter, Conversation } from "@/types/api";
+import { AgentEditPlan, AIAgentStep, Chapter, Conversation } from "@/types/api";
 import DocumentSelector from "@/components/document-selector";
 import ConfirmDialog from "@/components/confirm-dialog";
 import AgentApplyReview from "@/components/agent-apply-review";
@@ -82,6 +82,16 @@ function stripHtmlToText(value: string) {
 function joinBlocks(...parts: string[]) {
   return parts.map(part => part.trim()).filter(Boolean).join("\n\n");
 }
+
+const AGENT_LABELS: Record<string, string> = {
+  layered_context: "自动分层上下文",
+  get_current_chapter: "读取当前章节",
+  get_nearby_chapters_summary: "读取附近章节摘要",
+  search_my_chapters: "检索本书章节",
+  search_external_reference: "检索外部资料",
+  get_book_outline: "读取全书提纲",
+  extract_foreshadowing_candidates: "扫描伏笔候选",
+};
 
 function applyAgentPlanPreview(currentHtml: string, plan: AgentEditPlan) {
   let next = stripHtmlToText(currentHtml);
@@ -170,6 +180,8 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const [agentPlan, setAgentPlan] = useState<AgentEditPlan | null>(null);
   const [agentPreview, setAgentPreview] = useState("");
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
+  const [agentSteps, setAgentSteps] = useState<AIAgentStep[]>([]);
+  const [agentRunCollapsed, setAgentRunCollapsed] = useState(false);
 
   const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -347,6 +359,8 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
 
   const startStream = (request: Parameters<typeof connect>[0]) => {
     streamBufferRef.current = "";
+    setAgentSteps([]);
+    setAgentRunCollapsed(false);
     addAiMessage("", true);
     const currentEditorContent = getEditorContent();
     const withExtras = {
@@ -364,10 +378,22 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
         streamBufferRef.current += token;
         updateLastAiMessage(streamBufferRef.current, true);
       },
+      onAgentStep: (step) => {
+        setAgentSteps((current) => {
+          const index = current.findIndex((item) => item.id === step.id);
+          if (index < 0) return [...current, step];
+          const next = [...current];
+          next[index] = { ...next[index], ...step };
+          return next;
+        });
+      },
       onDone: () => {
         const finalContent = streamBufferRef.current;
 
         updateLastAiMessage(finalContent, false);
+        setAgentSteps((current) => current.map((step) =>
+          step.status === "running" ? { ...step, status: "completed" as const } : step
+        ));
 
         // 首次对话自动生成标题
         if (isFirstExchangeRef.current) {
@@ -379,14 +405,19 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
           });
         }
       },
-      onError: (message) => { updateLastAiMessage(`出错了：${message}`, false); },
+      onError: (message) => {
+        setAgentSteps((current) => current.map((step) =>
+          step.status === "running" ? { ...step, status: "failed" as const, detail: message } : step
+        ));
+        updateLastAiMessage(`出错了：${message}`, false);
+      },
     });
   };
 
-  const handleSend = async (text: string = input) => {
+  const handleStreamFallback = async (text: string) => {
     const trimmed = text.trim();
     
-    if (!trimmed || isStreaming || isPlanningEdit) return;
+    if (!trimmed || isStreaming) return;
 
     try {
       await ensureConversation();
@@ -424,10 +455,6 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     if (!trimmed || isStreaming || isPlanningEdit) return;
 
     const currentEditorContent = getEditorContent();
-    if (!currentChapterId && !stripHtmlToText(currentEditorContent)) {
-      addAiMessage("请先选择或写入一个章节，再让 Agent 生成修改方案。");
-      return;
-    }
 
     setIsPlanningEdit(true);
     setApplyProposal("");
@@ -470,10 +497,16 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
         current_chapter_id: currentChapterId ?? null,
         selected_doc_ids: selectedDocIds,
       });
-      const { preview, warnings } = applyAgentPlanPreview(currentEditorContent, plan);
-      setAgentPlan(plan);
-      setAgentPreview(preview);
-      setAgentWarnings(warnings);
+      if (plan.operations.length > 0) {
+        const { preview, warnings } = applyAgentPlanPreview(currentEditorContent, plan);
+        setAgentPlan(plan);
+        setAgentPreview(preview);
+        setAgentWarnings(warnings);
+      } else {
+        setAgentPlan(null);
+        setAgentPreview("");
+        setAgentWarnings([]);
+      }
 
       const riskText = plan.risk === "high" ? "高风险" : plan.risk === "low" ? "低风险" : "中风险";
       const aiContent = plan.operations.length
@@ -483,17 +516,15 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
       setMessages(finalMessages);
       persistMessages(finalMessages);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Agent 修改方案生成失败";
-      const finalMessages: Message[] = [...pendingMessages, { role: "ai", content: `出错了：${message}` }];
-      setMessages(finalMessages);
-      persistMessages(finalMessages);
+      console.warn("Agent decision failed, falling back to streaming chat", error);
+      await handleStreamFallback(trimmed);
     } finally {
       setIsPlanningEdit(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAgentEdit(); }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -609,7 +640,6 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const hoverBgClass = theme === 'dark' ? 'hover:bg-slate-800' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
   const inputBgClass = theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500 focus:bg-slate-700' : theme === 'sepia' ? 'bg-amber-100/50 border-amber-200 text-amber-900 placeholder:text-amber-400 focus:border-amber-400 focus:bg-amber-50' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:bg-white';
   const sendBtnClass = theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-600' : theme === 'sepia' ? 'bg-amber-800 hover:bg-amber-700 disabled:bg-amber-200 disabled:text-amber-400' : 'bg-slate-900 hover:bg-slate-700 disabled:bg-slate-100 disabled:text-slate-300';
-  const agentBtnClass = theme === 'dark' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:text-slate-600' : theme === 'sepia' ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:text-amber-400' : 'bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:text-slate-300';
   const dropdownBg = theme === 'dark' ? 'bg-slate-800 border-slate-700' : theme === 'sepia' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200';
   const dropdownItemHover = theme === 'dark' ? 'hover:bg-slate-700' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
   const userMsgBg = theme === 'dark' ? 'bg-slate-700 text-slate-100' : theme === 'sepia' ? 'bg-amber-800 text-white' : 'bg-slate-900 text-white';
@@ -857,6 +887,62 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
 
       {/* 消息区 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+        {agentSteps.length > 0 && (
+          <section className={`overflow-hidden rounded-lg border ${borderClass} ${contextBarBg} ${isStreaming ? "sticky top-0 z-20 shadow-sm" : ""}`}>
+            <button
+              type="button"
+              onClick={() => setAgentRunCollapsed((current) => !current)}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left ${hoverBgClass}`}
+            >
+              <div className={`rounded-md p-1.5 ${badgeClass}`}>
+                <Brain size={13} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className={`text-xs font-semibold ${headingClass}`}>
+                  {isStreaming ? "Agent 正在处理" : "Agent 执行记录"}
+                </div>
+                <div className={`mt-0.5 truncate text-[10px] ${mutedClass}`}>
+                  {agentSteps.filter((step) => step.status === "completed").length} / {agentSteps.length} 步完成
+                </div>
+              </div>
+              {agentRunCollapsed ? <ChevronDown size={13} className={mutedClass} /> : <ChevronUp size={13} className={mutedClass} />}
+            </button>
+
+            {!agentRunCollapsed && (
+              <div className={`border-t px-3 py-2 ${borderClass}`}>
+                {agentSteps.map((step, index) => {
+                  const title = AGENT_LABELS[step.title] || step.title;
+                  const statusIcon = step.status === "running"
+                    ? <Loader2 size={13} className="animate-spin text-orange-500" />
+                    : step.status === "failed"
+                      ? <XCircle size={13} className="text-red-500" />
+                      : <CheckCircle2 size={13} className="text-emerald-500" />;
+                  return (
+                    <div key={step.id} className="relative flex gap-2.5 pb-2.5 last:pb-0">
+                      {index < agentSteps.length - 1 && <div className={`absolute left-[6px] top-4 h-[calc(100%-0.5rem)] w-px ${theme === "dark" ? "bg-slate-700" : "bg-slate-200"}`} />}
+                      <div className="relative z-10 mt-0.5 shrink-0">{statusIcon}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className={`text-xs font-medium ${headingClass}`}>{title}</div>
+                        {step.detail && <div className={`mt-0.5 text-[10px] leading-4 ${mutedClass}`}>{step.detail}</div>}
+                        {step.content && (
+                          <details className="group mt-1">
+                            <summary className={`flex cursor-pointer list-none items-center gap-1 text-[10px] font-medium ${mutedClass}`}>
+                              <Search size={10} />
+                              查看读取内容
+                              <ChevronDown size={10} className="transition-transform group-open:rotate-180" />
+                            </summary>
+                            <pre className={`mt-1 max-h-44 overflow-auto whitespace-pre-wrap rounded-md border px-2 py-1.5 text-[10px] leading-4 ${borderClass} ${textClass}`}>{step.content}</pre>
+                          </details>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center space-y-4 py-8">
             <div className={`w-9 h-9 rounded-2xl ${theme === 'dark' ? 'bg-slate-800' : theme === 'sepia' ? 'bg-amber-100' : 'bg-slate-50'} flex items-center justify-center`}>
@@ -926,18 +1012,10 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
           <button
             onClick={() => handleAgentEdit()}
             disabled={!input.trim() || busy}
-            className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-xl transition-all ${agentBtnClass}`}
-            type="button"
-            title="生成可确认的修改方案"
-            aria-label="生成可确认的修改方案"
-          >
-            <Sparkles size={14} />
-          </button>
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || busy}
             className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-xl text-white transition-all ${sendBtnClass}`}
             type="button"
+            title="发送"
+            aria-label="发送"
           >
             <Send size={14} />
           </button>

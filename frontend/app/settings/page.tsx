@@ -29,6 +29,7 @@ import {
 import PersonaManager from "@/components/persona-manager";
 import { useTheme } from "@/hooks/use-theme";
 import ConfirmDialog from "@/components/confirm-dialog";
+import AppBackgroundLayers from "@/components/app-background-layers";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -56,8 +57,9 @@ export default function SettingsPage() {
   const [editorPaperOpacity, setEditorPaperOpacity] = useState(92);
   const [backgroundStatus, setBackgroundStatus] = useState("");
   const [backgroundUploading, setBackgroundUploading] = useState(false);
-  const [backgroundVersion, setBackgroundVersion] = useState(Date.now());
+  const [backgroundVersion, setBackgroundVersion] = useState(0);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [showBackgroundOnProfile, setShowBackgroundOnProfile] = useState(false);
   const [inviteMaxUses, setInviteMaxUses] = useState(1);
   const [inviteExpiresDays, setInviteExpiresDays] = useState(14);
   const [inviteCreating, setInviteCreating] = useState(false);
@@ -91,7 +93,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     loadSettings();
-    api.me().then(setCurrentUser).catch(() => setCurrentUser(null));
+    api.me().then((user) => {
+      setCurrentUser(user);
+      setShowBackgroundOnProfile(user.show_background_on_profile ?? false);
+    }).catch(() => setCurrentUser(null));
   }, []);
 
   // 切换到知识库 Tab 时加载
@@ -221,6 +226,22 @@ export default function SettingsPage() {
       showToast("邀请码已复制", true);
     } catch {
       showToast("复制失败，请手动选中复制", false);
+    }
+  };
+
+  const handleProfileBackgroundVisibility = async (visible: boolean) => {
+    const previous = showBackgroundOnProfile;
+    setShowBackgroundOnProfile(visible);
+    try {
+      const updated = await api.updateMyProfile({ show_background_on_profile: visible });
+      setCurrentUser((current) => current ? {
+        ...current,
+        show_background_on_profile: updated.show_background_on_profile,
+      } : current);
+      showToast(visible ? "个人主页背景已公开" : "个人主页背景已隐藏", true);
+    } catch {
+      setShowBackgroundOnProfile(previous);
+      showToast("背景公开设置保存失败，请重试", false);
     }
   };
 
@@ -396,7 +417,8 @@ export default function SettingsPage() {
     : "";
 
   return (
-    <div className={`min-h-screen ${pageBg} flex flex-col ${bodyTxt}`}>
+    <div className={`relative min-h-screen ${backgroundPreviewUrl ? "bg-slate-950" : pageBg} flex flex-col ${bodyTxt}`}>
+      <AppBackgroundLayers url={backgroundPreviewUrl} blur={backgroundBlur} dim={68} mode="page" />
       {/* Toast */}
       {toast && (
         <div className={`fixed bottom-5 left-1/2 -translate-x-1/2 z-[2000] px-4 py-2 rounded-md text-sm font-semibold flex items-center space-x-2 border transition-all ${toast.ok ? "bg-slate-950 text-white border-slate-800" : "bg-red-600 text-white border-red-700"}`}>
@@ -406,13 +428,13 @@ export default function SettingsPage() {
       )}
 
       {/* 顶部导航 */}
-      <header className={`sticky top-0 z-[100] backdrop-blur-md border-b ${headerBg} px-6 py-3 flex justify-between items-center`}>
-        <div className="flex items-center space-x-6">
+      <header className={`sticky top-0 z-[100] flex items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur-md sm:px-6 ${headerBg}`}>
+        <div className="flex min-w-0 items-center space-x-3 sm:space-x-6">
           <Link href="/" className={`group flex items-center space-x-2 ${mutedTxt} ${hoverTxt} transition-all`}>
             <div className={`p-1.5 rounded-md ${hoverRow} transition-colors`}>
               <ChevronLeft size={18} />
             </div>
-            <span className="text-sm font-medium">返回编辑器</span>
+            <span className="hidden text-sm font-medium sm:inline">返回编辑器</span>
           </Link>
           <div className={`h-4 w-px ${borderCls}`} />
           <div className="flex items-center space-x-2">
@@ -422,19 +444,19 @@ export default function SettingsPage() {
         </div>
         <button
           onClick={() => handleSave()}
-          disabled={saving || activeTab !== 'model'}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-md ${primaryBtn} disabled:opacity-40 transition-all font-semibold text-sm`}
+          disabled={saving}
+          className={`flex shrink-0 items-center space-x-2 rounded-md px-3 py-2 sm:px-4 ${primaryBtn} disabled:opacity-40 transition-all font-semibold text-sm`}
         >
           {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save size={16} />}
           <span>{saving ? "正在同步..." : "保存更改"}</span>
         </button>
       </header>
 
-      <main className={`flex-1 max-w-6xl mx-auto w-full py-8 px-6 grid grid-cols-12 gap-8`}>
+      <main className="relative z-10 mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8 lg:py-8">
         {/* 左侧导航 */}
-        <aside className="col-span-3 space-y-1">
-          <nav className="sticky top-28">
-            <p className={`text-[10px] font-bold ${mutedTxt} uppercase tracking-widest px-3 mb-2`}>设置</p>
+        <aside className="min-w-0">
+          <nav className="flex gap-2 overflow-x-auto pb-1 lg:sticky lg:top-28 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
+            <p className={`mb-2 hidden px-3 text-xs font-bold ${mutedTxt} lg:block`}>设置</p>
             {[
               { key: "model", icon: <Cpu size={16} />, label: "AI 模型服务" },
               { key: "persona", icon: <Sparkles size={16} />, label: "人格预设" },
@@ -444,7 +466,7 @@ export default function SettingsPage() {
               <button
                 key={key}
                 onClick={() => setActiveTab(key as typeof activeTab)}
-                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md border border-transparent font-semibold text-sm transition-all ${activeTab === key ? navActive : navInactive}`}
+                className={`flex shrink-0 items-center space-x-2 rounded-md border border-transparent px-3 py-2 text-sm font-semibold transition-all lg:w-full lg:space-x-3 ${activeTab === key ? navActive : navInactive}`}
               >
                 {icon}
                 <span>{label}</span>
@@ -454,7 +476,7 @@ export default function SettingsPage() {
         </aside>
 
         {/* 右侧主配置区 */}
-        <div className="col-span-9 space-y-6 pb-16">
+        <div className="min-w-0 space-y-6 pb-16">
           {loading && activeTab === 'model' ? (
             <div className="flex flex-col items-center justify-center py-20 space-y-4">
               <div className={`w-10 h-10 border-4 ${isDark ? 'border-slate-700 border-t-slate-400' : 'border-slate-200 border-t-slate-900'} rounded-full animate-spin`} />
@@ -583,7 +605,7 @@ export default function SettingsPage() {
                             {(provider === "deepseek" ? settings?.has_deepseek_key : settings?.has_openai_key) && !apiKeyInput && (
                               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-2 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">
                                 <CheckCircle2 size={14} />
-                                <span className="text-[10px] font-bold uppercase tracking-wider">密钥已就绪</span>
+                                <span className="text-xs font-bold">密钥已就绪</span>
                               </div>
                             )}
                           </div>
@@ -608,7 +630,7 @@ export default function SettingsPage() {
                           <span className={`${headingTxt} font-semibold text-sm px-2 py-1 ${isDark ? 'bg-slate-800' : 'bg-slate-100'} rounded-md`}>{temperature}</span>
                         </div>
                         <input type="range" min="0" max="2" step="0.1" value={temperature} onChange={(e) => setTemperature(parseFloat(e.target.value))} className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${isDark ? 'bg-slate-700 accent-slate-400' : 'bg-slate-100 accent-slate-900'}`} />
-                        <div className={`flex justify-between text-[10px] ${mutedTxt} font-bold uppercase tracking-widest`}><span>严谨精确</span><span>更具创意</span></div>
+                        <div className={`flex justify-between text-xs ${mutedTxt} font-bold`}><span>严谨精确</span><span>更具创意</span></div>
                       </div>
                       <div className={`p-5 rounded-lg border ${cardBg} space-y-4`}>
                         <div className="flex justify-between items-center">
@@ -619,7 +641,7 @@ export default function SettingsPage() {
                           <span className={`${headingTxt} font-semibold text-sm px-2 py-1 ${isDark ? 'bg-slate-800' : 'bg-slate-100'} rounded-md`}>{maxTokens}</span>
                         </div>
                         <input type="range" min="100" max="4000" step="100" value={maxTokens} onChange={(e) => setMaxTokens(parseInt(e.target.value))} className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${isDark ? 'bg-slate-700 accent-slate-400' : 'bg-slate-100 accent-slate-900'}`} />
-                        <div className={`flex justify-between text-[10px] ${mutedTxt} font-bold uppercase tracking-widest`}><span>短建议</span><span>长篇大论</span></div>
+                        <div className={`flex justify-between text-xs ${mutedTxt} font-bold`}><span>短建议</span><span>长篇大论</span></div>
                       </div>
                     </div>
                   </section>
@@ -968,7 +990,7 @@ export default function SettingsPage() {
                         <span className={`text-sm font-bold ${headingTxt}`}>
                           {kbUploading ? "正在解析并向量化..." : kbHealth?.vector_ready ? "点击或拖拽上传写作语料" : "向量引擎就绪后才能上传"}
                         </span>
-                        <span className={`text-[10px] ${mutedTxt} mt-2`}>支持 TXT, PDF, DOCX · 纯向量检索</span>
+                        <span className={`mt-2 text-xs ${mutedTxt}`}>支持 TXT, PDF, DOCX · 纯向量检索</span>
                       </div>
                     </label>
                   </div>
@@ -1026,7 +1048,7 @@ export default function SettingsPage() {
                 <section className="space-y-6">
                   <div className={`flex items-center space-x-2 border-b ${borderCls} pb-4`}>
                     <div className={`w-1.5 h-6 ${accentBar} rounded-full`} />
-                    <h2 className={`text-lg font-bold ${headingTxt}`}>编辑器主题</h2>
+                    <h2 className={`text-lg font-bold ${headingTxt}`}>外观与写作</h2>
                   </div>
                   <div className="grid grid-cols-3 gap-3">
                     {[
@@ -1053,8 +1075,8 @@ export default function SettingsPage() {
                   <div className={`p-5 rounded-lg border ${cardBg} space-y-5`}>
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h3 className={`text-sm font-bold ${headingTxt}`}>编辑器背景</h3>
-                        <p className={`text-xs ${mutedTxt} mt-1`}>图片会复制到作品文件夹的 .assets/backgrounds 中。</p>
+                        <h3 className={`text-sm font-bold ${headingTxt}`}>我的应用背景</h3>
+                        <p className={`text-xs ${mutedTxt} mt-1`}>这张图片会用于写作、设置、伙伴与聊天页面，并独立保存在你的用户空间中。</p>
                       </div>
                       <ImageIcon size={18} className={mutedTxt} />
                     </div>
@@ -1092,7 +1114,7 @@ export default function SettingsPage() {
                           >
                             清除背景
                           </button>
-                          {backgroundStatus && <span className={`text-[10px] ${mutedTxt}`}>{backgroundStatus}</span>}
+                          {backgroundStatus && <span className={`text-xs ${mutedTxt}`}>{backgroundStatus}</span>}
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1118,6 +1140,18 @@ export default function SettingsPage() {
                             <input type="range" min={55} max={100} value={editorPaperOpacity} onChange={e => setEditorPaperOpacity(parseInt(e.target.value))} className="w-full accent-slate-900" />
                           </div>
                         </div>
+                        <label className={`flex items-center justify-between gap-4 rounded-md border px-3 py-3 ${isDark ? "border-slate-700 bg-slate-950/35" : "border-slate-200 bg-white/65"}`}>
+                          <span>
+                            <span className={`block text-xs font-bold ${headingTxt}`}>在个人主页展示这张背景</span>
+                            <span className={`mt-1 block text-xs leading-5 ${mutedTxt}`}>切换后立即保存。关闭时，你和其他用户查看公开主页都会看到 NovelCat 默认背景。</span>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={showBackgroundOnProfile}
+                            onChange={(event) => void handleProfileBackgroundVisibility(event.target.checked)}
+                            className="h-4 w-4 shrink-0 accent-orange-500"
+                          />
+                        </label>
                       </div>
                     </div>
                   </div>
@@ -1126,7 +1160,7 @@ export default function SettingsPage() {
                     <div className="flex items-start space-x-3">
                       <AlertCircle size={18} className={isDark ? 'text-slate-400' : 'text-blue-500'} />
                       <p className={`text-xs ${isDark ? 'text-slate-300' : 'text-blue-700'} leading-relaxed`}>
-                        主题设置会立即应用到整个应用界面，您的偏好会自动保存在浏览器本地存储中。
+                        每位用户拥有独立的背景与外观偏好。个人主页是否展示背景由上方隐私开关控制。
                       </p>
                     </div>
                   </div>

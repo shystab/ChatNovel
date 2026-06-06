@@ -99,7 +99,10 @@ export default function BookSelector({
   const dropdownBg = theme === "dark" ? "bg-slate-900 border-slate-700" : theme === "sepia" ? "bg-amber-50 border-amber-200" : "bg-white border-slate-200";
 
   return (
-    <div className={`relative shrink-0 border-b ${border}`} ref={dropdownRef}>
+    <div
+      className={`relative shrink-0 border-b ${border} ${isOpen ? "z-[120]" : "z-10"}`}
+      ref={dropdownRef}
+    >
       {/* 触发按钮 */}
       <button
         onClick={() => setIsOpen((v) => !v)}
@@ -119,7 +122,7 @@ export default function BookSelector({
       {/* 下拉菜单 */}
       {isOpen && (
         <div
-          className={`absolute top-full left-0 right-0 z-50 border ${dropdownBg} rounded-b-lg shadow-lg overflow-hidden`}
+          className={`absolute top-full left-0 right-0 z-[130] border ${dropdownBg} rounded-b-lg shadow-lg overflow-hidden`}
         >
           {/* 书籍列表 */}
           <div className="max-h-48 overflow-y-auto">

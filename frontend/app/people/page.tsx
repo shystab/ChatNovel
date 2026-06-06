@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ArrowLeft, Loader2, MessageCircle, PenLine, Sparkles, UserRound } from "lucide-react";
 import { api } from "@/lib/api";
 import type { UserProfile } from "@/types/api";
+import UserBackgroundShell from "@/components/user-background-shell";
 
 function displayName(user: UserProfile) {
   return user.display_name?.trim() || user.username;
@@ -28,7 +29,7 @@ function Avatar({ user, size = "h-12 w-12" }: { user: UserProfile; size?: string
       <div className="flex h-full w-full items-center justify-center">{initials(user)}</div>
       {hasImage && (
         <img
-          src={api.avatarUrl(user.username)}
+          src={api.avatarUrl(user.username, user.avatar_image_path)}
           alt=""
           onError={(event) => {
             event.currentTarget.style.display = "none";
@@ -71,9 +72,9 @@ export default function PeoplePage() {
   const allUsers = me ? [me, ...users] : users;
 
   return (
-    <main className="min-h-screen bg-[#f7f1e7] text-slate-950">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-5">
-        <header className="flex items-center justify-between border-b border-stone-300 pb-4">
+    <UserBackgroundShell>
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-5 sm:px-7 sm:py-7">
+        <header className="novelcat-surface flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3">
           <div className="flex items-center gap-3">
             <Link
               href="/"
@@ -106,8 +107,9 @@ export default function PeoplePage() {
         </header>
 
         {error && (
-          <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <span>{error}</span>
+            <button type="button" onClick={() => void load()} className="shrink-0 rounded-md border border-red-200 bg-white px-3 py-1.5 font-semibold hover:bg-red-50">重试</button>
           </div>
         )}
 
@@ -118,11 +120,16 @@ export default function PeoplePage() {
           </div>
         ) : (
           <section className="grid gap-4 py-5 md:grid-cols-2 xl:grid-cols-3">
+            {allUsers.length === 0 && (
+              <div className="novelcat-surface col-span-full rounded-lg px-5 py-12 text-center text-sm text-slate-600">
+                还没有其他伙伴。管理员可以在设置页生成邀请码，邀请朋友加入。
+              </div>
+            )}
             {allUsers.map((user) => (
               <Link
                 key={user.username}
-                href={user.username === me?.username ? "/people/me" : `/people/${encodeURIComponent(user.username)}`}
-                className="group flex min-h-56 flex-col rounded-md border border-stone-300 bg-white/90 p-4 shadow-sm hover:border-orange-300 hover:bg-white"
+                href={`/people/${encodeURIComponent(user.username)}`}
+                className="novelcat-surface group flex min-h-56 flex-col rounded-lg p-4 hover:-translate-y-0.5 hover:border-orange-300"
               >
                 <div className="flex items-start gap-3">
                   <Avatar user={user} />
@@ -142,12 +149,12 @@ export default function PeoplePage() {
                     </div>
                     <p className="truncate text-xs text-slate-500">@{user.username}</p>
                   </div>
-                  <Sparkles size={18} className="text-stone-300 group-hover:text-orange-400" />
+                  <Sparkles size={18} className="text-slate-300 group-hover:text-orange-500" />
                 </div>
 
                 <div className="mt-4 flex-1 space-y-3">
-                  <div className="rounded-md bg-stone-50 px-3 py-2">
-                    <div className="text-[11px] font-semibold text-stone-500">正在写</div>
+                  <div className="rounded-md bg-slate-100/75 px-3 py-2">
+                    <div className="text-[11px] font-semibold text-slate-500">正在写</div>
                     <p className="mt-1 line-clamp-3 text-sm leading-6 text-slate-700">
                       {user.current_work || "还没有填写正在创作的内容"}
                     </p>
@@ -157,7 +164,7 @@ export default function PeoplePage() {
                   </p>
                 </div>
 
-                <div className="mt-4 flex items-center justify-between border-t border-stone-200 pt-3 text-xs text-slate-500">
+                <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-xs text-slate-500">
                   <span>个人主页</span>
                   <UserRound size={15} />
                 </div>
@@ -166,6 +173,6 @@ export default function PeoplePage() {
           </section>
         )}
       </div>
-    </main>
+    </UserBackgroundShell>
   );
 }

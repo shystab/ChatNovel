@@ -103,6 +103,7 @@ def _migrate_columns(session: Session) -> None:
     _add_column_if_missing(session, "user", "current_work", "VARCHAR")
     _add_column_if_missing(session, "user", "avatar_color", "VARCHAR DEFAULT '#f97316'")
     _add_column_if_missing(session, "user", "avatar_image_path", "VARCHAR")
+    _add_column_if_missing(session, "user", "show_background_on_profile", "BOOLEAN DEFAULT 0")
 
 
 def _ensure_default_book(session: Session) -> int:

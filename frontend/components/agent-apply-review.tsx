@@ -52,7 +52,7 @@ export default function AgentApplyReview({
   const primaryBtn = isDark ? "bg-slate-200 hover:bg-white text-slate-950" : isSepia ? "bg-amber-900 hover:bg-amber-800 text-white" : "bg-slate-900 hover:bg-slate-800 text-white";
   const dangerBtn = "bg-red-600 hover:bg-red-700 text-white";
   const currentPreview = stripHtml(currentContent) || "当前章节还是空的。";
-  const isPlan = Boolean(plan);
+  const isPlan = Boolean(plan?.operations.length);
   const riskLabel = plan?.risk === "high" ? "高风险" : plan?.risk === "low" ? "低风险" : "中风险";
 
   return (
@@ -126,7 +126,7 @@ export default function AgentApplyReview({
             <button type="button" onClick={onCancel} className={`px-3 py-2 rounded-md border text-xs font-semibold transition-colors ${secondaryBtn}`}>
               取消
             </button>
-            {isPlan ? (
+            {isPlan && plan?.operations.length ? (
               <button type="button" onClick={onApplyPlan} className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold transition-colors ${primaryBtn}`}>
                 <Check size={13} />
                 应用方案

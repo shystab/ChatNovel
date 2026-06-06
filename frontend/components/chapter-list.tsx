@@ -17,6 +17,7 @@ interface ChapterListProps {
   theme: Theme;
   colors: ThemeColors;
   onToggleLeft: () => void;
+  bookSelector?: React.ReactNode;
 }
 
 function plainText(html: string) {
@@ -159,28 +160,28 @@ function ExportModal({ bookId, chapters, onClose, theme }: ExportModalProps) {
   return (
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
-        className={`${bg} rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border ${border} flex flex-col max-h-[80vh]`}
+        className={`${bg} flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-lg border shadow-lg ${border}`}
         onClick={e => e.stopPropagation()}
       >
         {/* 标题栏 */}
         <div className={`px-6 py-4 border-b ${border} ${headerBg} flex justify-between items-center shrink-0`}>
           <div className="flex items-center space-x-3">
-            <div className={`p-2 rounded-xl ${theme === 'dark' ? 'bg-slate-700' : theme === 'sepia' ? 'bg-amber-800' : 'bg-slate-900'} text-white`}>
+            <div className={`rounded-md p-2 ${theme === 'dark' ? 'bg-slate-700' : theme === 'sepia' ? 'bg-amber-800' : 'bg-slate-900'} text-white`}>
               <Download size={16} />
             </div>
             <div>
               <div className={`font-bold text-sm ${text}`}>导出章节</div>
-              <div className={`text-[10px] ${muted}`}>勾选要导出的章节</div>
+              <div className={`text-xs ${muted}`}>勾选要导出的章节</div>
             </div>
           </div>
-          <button onClick={onClose} className={`p-1.5 rounded-lg ${rowHover} ${muted} transition-colors`} type="button">
+          <button onClick={onClose} className={`rounded-md p-1.5 ${rowHover} ${muted} transition-colors`} type="button" aria-label="关闭导出窗口">
             <X size={16} />
           </button>
         </div>
 
         {/* 格式选择 */}
         <div className={`px-6 py-3 border-b ${border} flex items-center space-x-2 shrink-0`}>
-          <span className={`text-[10px] font-bold uppercase tracking-widest ${muted} mr-2`}>格式</span>
+          <span className={`mr-2 text-xs font-bold ${muted}`}>格式</span>
           <button
             onClick={() => setFmt("txt")}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${fmt === "txt" ? btnActive : btnInactive}`}
@@ -258,12 +259,11 @@ function ExportModal({ bookId, chapters, onClose, theme }: ExportModalProps) {
 }
 
 // ── 主组件 ─────────────────────────────────────────────────────────────────────
-export default function ChapterList({ bookId, chapters, onChaptersChange, onChapterSelect, selectedChapterId, theme, onToggleLeft }: ChapterListProps) {
+export default function ChapterList({ bookId, chapters, onChaptersChange, onChapterSelect, selectedChapterId, theme, onToggleLeft, bookSelector }: ChapterListProps) {
   const [loading] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
-  const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Chapter | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -432,6 +432,8 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
       </div>
 
       {/* 作品概览与搜索 */}
+      {bookSelector}
+
       <div className={`px-3 py-3 border-b ${borderClass} ${cardBgClass} shrink-0 space-y-2`}>
         <div className={`grid grid-cols-2 gap-2 text-[10px] ${mutedClass}`}>
           <div className={`rounded-md px-2 py-1.5 ${inputBgClass}`}>
@@ -475,12 +477,12 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
         ) : chapters.length === 0 ? (
           <div className="px-4 py-10 text-center space-y-2">
             <p className={`text-xs ${mutedClass}`}>暂无章节</p>
-            <p className={`text-[10px] ${mutedClass} opacity-60`}>点击右上角 + 开始创作</p>
+            <p className={`text-xs ${mutedClass} opacity-70`}>点击右上角 + 开始创作</p>
           </div>
         ) : visibleChapters.length === 0 ? (
           <div className="px-4 py-10 text-center space-y-2">
             <p className={`text-xs ${mutedClass}`}>没有匹配的章节</p>
-            <p className={`text-[10px] ${mutedClass} opacity-60`}>换个关键词试试</p>
+            <p className={`text-xs ${mutedClass} opacity-70`}>换个关键词试试</p>
           </div>
         ) : (
           <ul className="space-y-0.5">
@@ -496,8 +498,6 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
               <li
                 key={chapter.id}
                 onClick={() => editingId !== chapter.id && onChapterSelect(chapter.id)}
-                onMouseEnter={() => setHoveredId(chapter.id)}
-                onMouseLeave={() => setHoveredId(null)}
                 className={`group relative px-3 py-2 cursor-pointer rounded-lg transition-all ${
                   selectedChapterId === chapter.id
                     ? `${selectedBgClass} shadow-sm ring-1`
@@ -532,8 +532,7 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
                       <span className={`text-[10px] tabular-nums shrink-0 ${mutedClass}`}>
                         {formatCount(charCount)}
                       </span>
-                      {hoveredId === chapter.id && (
-                        <div className="flex items-center space-x-0.5 shrink-0">
+                      <div className="flex shrink-0 items-center space-x-0.5 opacity-55 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                           <button
                             onClick={(e) => handleMoveChapter(chapter, "up", e)}
                             disabled={isFirst || movingId === chapter.id}
@@ -568,8 +567,7 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
                           >
                             <Trash2 size={10} />
                           </button>
-                        </div>
-                      )}
+                      </div>
                     </div>
                     {snippet ? (
                       <div className={`ml-6 line-clamp-2 text-[10px] leading-4 ${mutedClass}`}>

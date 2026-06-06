@@ -1,8 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #0f172a;
+  --background: #eef1f5;
+  --foreground: #172033;
+  --accent: #f06d42;
+  --accent-strong: #d9552d;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-solid: #ffffff;
+  --line: rgba(100, 116, 139, 0.22);
+  --muted: #657084;
   /* z-index 层级系统 */
   --z-toolbar: 100;
   --z-dropdown: 500;
@@ -15,6 +21,60 @@ body {
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  transition:
+    background-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+button:active,
+a:active {
+  transform: translateY(1px);
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 78%, white);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(240, 109, 66, 0.22);
+}
+
+.novelcat-social-shell {
+  min-height: 100dvh;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at 78% -18%, rgba(240, 109, 66, 0.11), transparent 34rem),
+    linear-gradient(145deg, #f4f6f9 0%, #e9edf3 100%);
+}
+
+.novelcat-social-shell header {
+  border-color: var(--line);
+}
+
+.novelcat-social-shell .novelcat-surface {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  backdrop-filter: blur(18px) saturate(1.12);
+  box-shadow: 0 6px 18px rgba(45, 55, 72, 0.07);
+}
+
+.novelcat-login-shell {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(240, 109, 66, 0.18), transparent 28rem),
+    radial-gradient(circle at 92% 94%, rgba(75, 101, 138, 0.18), transparent 30rem),
+    #111827;
 }
 
 /* 优化的滚动条样式 */
@@ -77,12 +137,6 @@ body {
 }
 
 /* 平滑过渡 */
-* {
-  transition-property: background-color, border-color, color, fill, stroke;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 200ms;
-}
-
 /* 中文字体优化 */
 @font-face {
   font-family: 'Novel Sans';
@@ -203,15 +257,15 @@ body {
   height: 100%;
   overflow: hidden;
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.30);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(15, 23, 42, 0.24) 42%, rgba(255, 255, 255, 0.08)),
-    rgba(2, 6, 23, 0.30);
-  backdrop-filter: blur(28px) saturate(1.65) contrast(1.05);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(15, 23, 42, 0.16) 48%, rgba(255, 255, 255, 0.07)),
+    rgba(2, 6, 23, 0.22);
+  backdrop-filter: blur(16px) saturate(1.7) contrast(1.06);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.54),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.14),
-    0 24px 70px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.13),
+    0 10px 30px rgba(0, 0, 0, 0.20);
 }
 
 .novelcat-glass-workspace #left-sidebar > div::before,
@@ -223,8 +277,8 @@ body {
   z-index: 1;
   border-radius: inherit;
   background:
-    radial-gradient(circle at 16% 0%, rgba(255, 255, 255, 0.32), transparent 30%),
-    linear-gradient(100deg, rgba(255, 255, 255, 0.24), transparent 24%, rgba(236, 72, 153, 0.12) 62%, rgba(59, 130, 246, 0.12) 78%, transparent);
+    radial-gradient(circle at 16% 0%, rgba(255, 255, 255, 0.38), transparent 30%),
+    linear-gradient(100deg, rgba(255, 255, 255, 0.20), transparent 24%, rgba(236, 72, 153, 0.10) 62%, rgba(59, 130, 246, 0.11) 78%, transparent);
   mix-blend-mode: screen;
 }
 
@@ -257,8 +311,8 @@ body {
 .novelcat-glass-workspace #ai-sidebar [class*="bg-slate-100"],
 .novelcat-glass-workspace #ai-sidebar [class*="bg-amber-50"],
 .novelcat-glass-workspace #ai-sidebar [class*="bg-amber-100"] {
-  background-color: rgba(15, 23, 42, 0.22) !important;
-  backdrop-filter: blur(14px) saturate(1.35);
+  background-color: rgba(15, 23, 42, 0.14) !important;
+  backdrop-filter: blur(8px) saturate(1.35);
 }
 
 .novelcat-glass-workspace #left-sidebar [class*="border-slate"],
@@ -279,7 +333,7 @@ body {
 .novelcat-glass-workspace #left-sidebar [class*="bg-slate-900"],
 .novelcat-glass-workspace #left-sidebar [class*="bg-slate-800"],
 .novelcat-glass-workspace #left-sidebar [class*="bg-slate-700"] {
-  background-color: rgba(15, 23, 42, 0.24) !important;
+  background-color: rgba(15, 23, 42, 0.18) !important;
 }
 
 .novelcat-glass-workspace #editor header,
@@ -317,4 +371,78 @@ body {
 .novelcat-glass-workspace input,
 .novelcat-glass-workspace textarea {
   color: rgba(248, 250, 252, 0.92) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .novelcat-social-shell .novelcat-surface {
+    background: var(--surface-solid);
+    backdrop-filter: none;
+  }
+
+  .novelcat-glass-workspace #left-sidebar > div,
+  .novelcat-glass-workspace #ai-sidebar > div {
+    background: rgba(15, 23, 42, 0.94);
+    backdrop-filter: none;
+  }
+}
+
+.profile-glass {
+  background: linear-gradient(145deg, rgba(17, 24, 39, 0.88), rgba(25, 32, 48, 0.76));
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(8px) saturate(1.15);
+}
+
+.profile-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 0.375rem;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0.55rem 0.75rem;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.profile-action:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.profile-work-card {
+  background: linear-gradient(145deg, rgba(18, 24, 39, 0.88), rgba(33, 39, 55, 0.76));
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(6px) saturate(1.12);
+}
+
+.profile-work-card:hover {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: linear-gradient(145deg, rgba(24, 31, 48, 0.74), rgba(43, 48, 65, 0.48));
+}
+
+.profile-reader {
+  background: rgba(14, 20, 33, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .profile-glass,
+  .profile-work-card,
+  .profile-reader {
+    background: #182033;
+    backdrop-filter: none;
+  }
 }

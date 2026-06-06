@@ -660,24 +660,43 @@ class AIService:
     def _extract_json_object(self, raw: str) -> dict:
         """从模型返回中提取 JSON 对象，兼容偶尔出现的代码块。"""
         text = (raw or "").strip()
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text)
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            start = text.find("{")
-            end = text.rfind("}")
-            if start >= 0 and end > start:
-                return json.loads(text[start:end + 1])
-            raise
+        for _ in range(3):
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s*```$", "", text).strip()
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                start = text.find("{")
+                end = text.rfind("}")
+                if start < 0 or end <= start:
+                    raise
+                parsed = json.loads(text[start:end + 1])
 
-    def _normalize_agent_edit_plan(self, data: dict, *, fallback_text: str = "") -> AgentEditPlan:
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, str):
+                text = parsed.strip()
+                continue
+            raise ValueError("Agent edit response must be a JSON object")
+
+        raise ValueError("Agent edit response contains too many nested JSON strings")
+
+    def _agent_reply_from_raw(self, raw: str) -> str:
+        """Return a safe chat reply when the model failed to produce a usable plan."""
+        text = (raw or "").strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text).strip()
+        if not text or text.startswith(("{", "[")):
+            return "AI 没有生成可应用的修改方案，请换一种更具体的说法再试。"
+        return self._clip_text(self._plain_text(text).strip(), 500)
+
+    def _normalize_agent_edit_plan(self, data: dict) -> AgentEditPlan:
         """把模型 JSON 收敛成安全的写作操作列表。"""
         summary = self._clip_text(str(data.get("summary") or "AI 写作修改方案"), 220)
         reply = self._clip_text(str(data.get("reply") or summary), 500)
-        risk = str(data.get("risk") or "medium").lower()
+        risk = str(data.get("risk") or "low").lower()
         if risk not in {"low", "medium", "high"}:
-            risk = "medium"
+            risk = "low"
 
         operations: list[AgentEditOperation] = []
         raw_operations = data.get("operations")
@@ -713,16 +732,10 @@ class AIService:
                 reason=reason,
             ))
 
-        if not operations and fallback_text.strip():
-            operations.append(AgentEditOperation(
-                action="append",
-                content=self._plain_text(fallback_text).strip(),
-                reason="模型没有返回结构化操作，已降级为追加预览。",
-            ))
-            risk = "medium"
-
         if any(op.action == "replace_all" for op in operations) or len(operations) >= 3:
             risk = "high" if risk != "low" else "medium"
+        elif not operations:
+            risk = "low"
 
         return AgentEditPlan(reply=reply, summary=summary, risk=risk, operations=operations)
 
@@ -797,6 +810,7 @@ class AIService:
 - reply 是给用户看的说明，不会写入正文；content 才是会进入小说正文的内容。
 - reason 用一句话说明修改意图。
 - operations 最多 5 步。
+- 如果用户只是在问候、讨论、提问，或没有明确要求修改正文，正常回答并返回空的 operations。
 """
         user = f"""请根据以下任务生成写作修改方案。
 
@@ -833,10 +847,11 @@ class AIService:
         )
         try:
             data = self._extract_json_object(raw)
-            return self._normalize_agent_edit_plan(data, fallback_text=raw)
+            return self._normalize_agent_edit_plan(data)
         except Exception as exc:
             logger.warning("Agent edit plan parse failed: %s", exc)
-            return self._normalize_agent_edit_plan({}, fallback_text=raw)
+            reply = self._agent_reply_from_raw(raw)
+            return AgentEditPlan(reply=reply, summary="没有生成可应用的修改方案", risk="low", operations=[])
 
     def get_book_outline(self, book_id: int | None, limit: int = 80) -> str:
         """返回当前书籍章节摘要索引。"""
@@ -917,6 +932,16 @@ class AIService:
         selected_doc_ids: list[int] | None = None,
     ):
         messages = self._prepare_chat_messages(messages)
+        yield {
+            "type": "agent_step",
+            "step": {
+                "id": "task-received",
+                "phase": "planning",
+                "status": "completed",
+                "title": "已接收写作任务",
+                "detail": "开始整理可用上下文与工具",
+            },
+        }
 
         # 构建基础 system prompt
         persona = self._get_persona(user_id, project_id)
@@ -937,6 +962,17 @@ class AIService:
         )
         if auto_context:
             system_content = f"{system_content}\n\n{auto_context}"
+            yield {
+                "type": "agent_step",
+                "step": {
+                    "id": "context-ready",
+                    "phase": "context",
+                    "status": "completed",
+                    "title": "已准备分层写作上下文",
+                    "detail": "当前章节、附近章节摘要与可用记忆已注入",
+                    "content": self._clip_text(auto_context, 3200),
+                },
+            }
 
         context_rules = [
             "【上下文使用规则】",
@@ -984,44 +1020,72 @@ class AIService:
 """
         system_content = f"{system_content}\n{tool_instructions}"
 
-        # 1. 调用非流式 chat 判断是否需要工具
-        tool_messages = [{"role": "system", "content": system_content}] + messages
-        try:
-            response_str = self.provider.chat(
-                messages=tool_messages,
-                tools=WRITING_TOOLS,
-                tool_choice="auto",
-                temperature=0.1,
-                max_tokens=500
-            )
-        except Exception as e:
-            logger.info("Tool selection failed, falling back to normal chat: %s", e)
-            response_str = ""
+        # Agent 最多进行三轮工具决策；现有工具和分层记忆保持不变。
+        for round_index in range(3):
+            planning_id = f"planning-{round_index + 1}"
+            yield {
+                "type": "agent_step",
+                "step": {
+                    "id": planning_id,
+                    "phase": "planning",
+                    "status": "running",
+                    "title": "正在判断下一步",
+                    "detail": f"第 {round_index + 1} 轮工具决策",
+                },
+            }
+            try:
+                response_str = self.provider.chat(
+                    messages=[{"role": "system", "content": system_content}] + messages,
+                    tools=WRITING_TOOLS,
+                    tool_choice="auto",
+                    temperature=0.1,
+                    max_tokens=500,
+                )
+                tool_calls = json.loads(response_str)
+            except Exception as exc:
+                logger.info("Tool selection failed, falling back to final response: %s", exc)
+                tool_calls = []
 
-        # 2. 解析 tool_calls
-        try:
-            tool_calls = json.loads(response_str)
-            if isinstance(tool_calls, list) and len(tool_calls) > 0:
-                # 将 AI 的工具调用消息添加到对话历史
-                assistant_msg = {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": tc.get("id", f"call_{i}"),
-                            "type": "function",
-                            "function": {
-                                "name": tc["function"]["name"],
-                                "arguments": json.dumps(tc["function"]["arguments"]) if not isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
-                            }
-                        }
-                        for i, tc in enumerate(tool_calls)
-                    ]
+            if not isinstance(tool_calls, list) or not tool_calls:
+                yield {
+                    "type": "agent_step",
+                    "step": {
+                        "id": planning_id,
+                        "phase": "planning",
+                        "status": "completed",
+                        "title": "上下文已经足够",
+                        "detail": "开始组织最终回答",
+                    },
                 }
-                messages.append(assistant_msg)
+                break
 
-                # 执行每个工具调用，将结果添加到 messages
-                for tc in tool_calls:
+            yield {
+                "type": "agent_step",
+                "step": {
+                    "id": planning_id,
+                    "phase": "planning",
+                    "status": "completed",
+                    "title": f"决定调用 {len(tool_calls)} 个工具",
+                    "detail": f"第 {round_index + 1} 轮工具决策完成",
+                },
+            }
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tc.get("id", f"call_{round_index}_{i}"),
+                        "type": "function",
+                        "function": {
+                            "name": tc["function"]["name"],
+                            "arguments": json.dumps(tc["function"]["arguments"]) if not isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"],
+                        },
+                    }
+                    for i, tc in enumerate(tool_calls)
+                ],
+            })
+
+            for tool_index, tc in enumerate(tool_calls):
                     tool_name = tc["function"]["name"]
                     args_raw = tc["function"]["arguments"]
                     if isinstance(args_raw, str):
@@ -1031,7 +1095,20 @@ class AIService:
                             args = {}
                     else:
                         args = args_raw
-                    tool_call_id = tc.get("id", f"call_{tool_name}_{len(messages)}")
+                    tool_call_id = tc.get("id", f"call_{round_index}_{tool_index}_{tool_name}")
+                    step_id = f"tool-{round_index}-{tool_call_id}"
+                    query = str(args.get("query") or "")
+                    yield {
+                        "type": "agent_step",
+                        "step": {
+                            "id": step_id,
+                            "phase": "tool",
+                            "status": "running",
+                            "title": tool_name,
+                            "detail": query or "正在读取写作上下文",
+                            "query": query,
+                        },
+                    }
 
                     result = ""  # 初始化默认值
 
@@ -1072,26 +1149,29 @@ class AIService:
                         logger.warning("Tool %s failed: %s", tool_name, e)
 
                     messages.append({"role": "tool", "content": result, "tool_call_id": tool_call_id})
+                    yield {
+                        "type": "agent_step",
+                        "step": {
+                            "id": step_id,
+                            "phase": "tool",
+                            "status": "failed" if result.startswith(f"工具 {tool_name} 执行失败") else "completed",
+                            "title": tool_name,
+                            "detail": query or "工具调用完成",
+                            "query": query,
+                            "content": self._clip_text(result, 3200),
+                        },
+                    }
 
-                # 所有工具执行完毕后，重新调用流式生成最终回复（不带 tools）
-                final_messages = [{"role": "system", "content": system_content}] + messages
-                try:
-                    gen_config = self._get_generation_config()
-                    yield from self.provider.stream_chat(
-                        messages=final_messages,
-                        temperature=temperature if temperature != 0.0 else gen_config["temperature"],
-                        max_tokens=max_tokens or gen_config["max_tokens"],
-                    )
-                except Exception as e:
-                    logger.exception("Final stream after tool calls failed: %s", e)
-                    raise
-                return  # 工具调用后续写完成后直接返回，不再执行下面的普通对话逻辑
-        except json.JSONDecodeError:
-            # 不是 tool_calls。工具判断阶段可能直接回复了正文，但它的 token 上限较低；
-            # 忽略这次短回复，继续走正式流式生成，避免回答被截断。
-            pass
-
-        # 3. 普通对话（无工具调用或无回复）
+        yield {
+            "type": "agent_step",
+            "step": {
+                "id": "generating-answer",
+                "phase": "generating",
+                "status": "running",
+                "title": "正在生成回答",
+                "detail": "根据已读取的上下文组织内容",
+            },
+        }
         full_messages = [{"role": "system", "content": system_content}] + messages
         gen_config = self._get_generation_config()
         yield from self.provider.stream_chat(

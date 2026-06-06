@@ -109,8 +109,8 @@ async def upload_background_image(
 
     db_settings = get_settings(session, user_id=current_user.username)
     old_path = db_settings.background_image_path if db_settings else None
-    relative_path = save_background_image(file.filename or "background.jpg", data)
-    delete_background_image(old_path)
+    relative_path = save_background_image(current_user.username, file.filename or "background.jpg", data)
+    delete_background_image(old_path, current_user.username)
     updated = update_settings(session, SettingUpdate(background_image_path=relative_path), user_id=current_user.username)
     return _to_response(updated)
 
@@ -121,7 +121,7 @@ def clear_background_image(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ):
     db_settings = get_settings(session, user_id=current_user.username)
-    delete_background_image(db_settings.background_image_path if db_settings else None)
+    delete_background_image(db_settings.background_image_path if db_settings else None, current_user.username)
     updated = update_settings(session, SettingUpdate(background_image_path=None), user_id=current_user.username)
     return _to_response(updated)
 

@@ -33,6 +33,7 @@ def _auth_response(user: User) -> AuthResponse:
             current_work=user.current_work,
             avatar_color=user.avatar_color or "#f97316",
             avatar_image_path=user.avatar_image_path,
+            show_background_on_profile=user.show_background_on_profile,
             is_admin=user.is_admin,
         ),
     )
@@ -83,6 +84,7 @@ def me(
             current_work=user.current_work,
             avatar_color=user.avatar_color or "#f97316",
             avatar_image_path=user.avatar_image_path,
+            show_background_on_profile=user.show_background_on_profile,
             is_admin=user.is_admin,
         )
     return AuthUser(username=current_user.username, is_admin=current_user.is_admin)

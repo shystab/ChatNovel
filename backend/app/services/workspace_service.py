@@ -133,18 +133,18 @@ def resolve_workspace_relative_path(value: str) -> Path:
     return path
 
 
-def background_assets_folder() -> Path:
-    folder = workspace_root() / ".assets" / "backgrounds"
+def background_assets_folder(username: str) -> Path:
+    folder = workspace_root() / ".assets" / "users" / safe_filename(username, "user") / "editor-backgrounds"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
 
-def save_background_image(filename: str, data: bytes) -> str:
+def save_background_image(username: str, filename: str, data: bytes) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
         suffix = ".jpg"
 
-    folder = background_assets_folder()
+    folder = background_assets_folder(username)
     for old_file in folder.glob("editor-background.*"):
         old_file.unlink(missing_ok=True)
 
@@ -153,11 +153,17 @@ def save_background_image(filename: str, data: bytes) -> str:
     return workspace_relative_path(path)
 
 
-def delete_background_image(relative_path: str | None) -> None:
+def delete_background_image(relative_path: str | None, username: str | None = None) -> None:
     if not relative_path:
         return
     try:
-        resolve_workspace_relative_path(relative_path).unlink(missing_ok=True)
+        path = resolve_workspace_relative_path(relative_path)
+        if username:
+            user_root = user_assets_folder(username).resolve()
+            resolved = path.resolve()
+            if user_root not in resolved.parents:
+                return
+        path.unlink(missing_ok=True)
     except ValueError:
         return
 

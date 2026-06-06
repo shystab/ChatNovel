@@ -12,6 +12,7 @@ import { api, getStoredUser, withAccessToken } from "@/lib/api";
 import { AuthUser, Book, Chapter, EditorAppearance } from "@/types/api";
 import { LogOut, PanelLeftOpen, PanelRightOpen, Users } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
+import AppBackgroundLayers from "@/components/app-background-layers";
 
 const SESSION_KEY = "novelcat_session";
 const ACTIVE_BOOK_KEY = "novelcat_active_book";
@@ -113,7 +114,7 @@ export default function Home() {
           background_blur: settings.background_blur ?? 0,
           background_dim: settings.background_dim ?? 22,
           editor_paper_opacity: settings.editor_paper_opacity ?? 92,
-          background_url: settings.background_image_path ? withAccessToken(`${apiBase}/settings/background?v=${Date.now()}`) : undefined,
+          background_url: settings.background_image_path ? withAccessToken(`${apiBase}/settings/background?v=${encodeURIComponent(settings.background_image_path)}`) : undefined,
         });
       } catch {
         console.error("加载自动保存设置失败");
@@ -385,6 +386,16 @@ export default function Home() {
 
   const toggleLeft = () => setShowLeft((v) => !v);
   const toggleRight = () => setShowRight((v) => !v);
+
+  useEffect(() => {
+    const collapseForViewport = () => {
+      if (window.innerWidth < 1120) setShowRight(false);
+      if (window.innerWidth < 760) setShowLeft(false);
+    };
+    collapseForViewport();
+    window.addEventListener("resize", collapseForViewport);
+    return () => window.removeEventListener("resize", collapseForViewport);
+  }, []);
   const resizeLineClass =
     theme === "dark"
       ? "bg-slate-700 group-hover:bg-slate-500"
@@ -456,26 +467,13 @@ export default function Home() {
 
   return (
     <main className={`relative flex min-h-screen h-screen overflow-hidden ${glassTextClass} ${hasWorkspaceBackground ? "novelcat-glass-workspace" : colors.bg} flex-col`}>
-      {hasWorkspaceBackground && (
-        <>
-          <div
-            className="absolute inset-0 z-0 bg-cover bg-center"
-            style={{
-              backgroundImage: `url(${editorAppearance.background_url})`,
-              filter: `blur(${editorAppearance.background_blur ?? 0}px) saturate(1.08)`,
-              transform: `scale(${editorAppearance.background_blur ? 1.05 : 1})`,
-            }}
-          />
-          <div
-            className="absolute inset-0 z-0"
-            style={{
-              background:
-                `linear-gradient(90deg, rgba(2,6,23,${Math.max(backgroundDim + 0.28, 0.50)}), rgba(15,23,42,${Math.max(backgroundDim + 0.14, 0.38)}) 42%, rgba(2,6,23,${Math.max(backgroundDim + 0.22, 0.46)})), linear-gradient(135deg, rgba(236,72,153,0.16), transparent 38%, rgba(59,130,246,0.18))`,
-            }}
-          />
-          <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_22%_18%,rgba(255,255,255,0.18),transparent_28%),radial-gradient(circle_at_82%_12%,rgba(236,72,153,0.22),transparent_24%),radial-gradient(circle_at_76%_80%,rgba(59,130,246,0.24),transparent_32%),linear-gradient(115deg,rgba(255,255,255,0.10),transparent_42%,rgba(255,255,255,0.08))]" />
-        </>
-      )}
+      <AppBackgroundLayers
+        url={editorAppearance.background_url}
+        blur={editorAppearance.background_blur}
+        dim={backgroundDim * 100}
+        mode="workspace"
+        position="absolute"
+      />
       <div
         className="relative z-10 grid flex-1 min-h-0 w-full"
         style={{ gridTemplateColumns }}
@@ -486,71 +484,6 @@ export default function Home() {
           <>
             <aside id="left-sidebar" className={`min-w-0 overflow-hidden ${hasWorkspaceBackground ? "p-2 pr-0" : ""}`}>
               <div className="flex flex-col h-full">
-                {/* 书籍选择器 */}
-                <BookSelector
-                  books={books}
-                  activeBookId={activeBookId}
-                  onSwitch={handleBookSwitch}
-                  onBooksChange={handleBooksChange}
-                  theme={theme}
-                  colors={colors}
-                />
-                {currentUser && (
-                  <div className={`px-3 py-2 border-b flex items-center gap-2 ${
-                    theme === "dark"
-                      ? "border-slate-700 bg-slate-900 text-slate-300"
-                      : theme === "sepia"
-                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                      : "border-slate-200 bg-slate-50 text-slate-600"
-                  }`}>
-                    <div
-                      className="relative h-6 w-6 shrink-0 overflow-hidden rounded-md text-[10px] font-bold text-white shadow-sm"
-                      style={{ backgroundColor: currentUser.avatar_color || "#f97316" }}
-                    >
-                      <div className="flex h-full w-full items-center justify-center">{userInitials(currentUser)}</div>
-                      {avatarUrl && (
-                        <img
-                          src={avatarUrl}
-                          alt=""
-                          onError={(event) => {
-                            event.currentTarget.style.display = "none";
-                          }}
-                          className="absolute inset-0 h-full w-full object-cover"
-                        />
-                      )}
-                    </div>
-                    <span className="min-w-0 flex-1 truncate text-xs font-semibold">
-                      {currentUser.display_name || currentUser.username}
-                    </span>
-                    <Link
-                      href="/people"
-                      title="伙伴"
-                      className={`p-1 rounded transition-colors ${
-                        theme === "dark"
-                          ? "hover:bg-slate-800 hover:text-slate-100"
-                          : theme === "sepia"
-                          ? "hover:bg-amber-100 hover:text-amber-950"
-                          : "hover:bg-white hover:text-slate-900"
-                      }`}
-                    >
-                      <Users size={13} />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      title="退出登录"
-                      className={`p-1 rounded transition-colors ${
-                        theme === "dark"
-                          ? "hover:bg-slate-800 hover:text-slate-100"
-                          : theme === "sepia"
-                          ? "hover:bg-amber-100 hover:text-amber-950"
-                          : "hover:bg-white hover:text-slate-900"
-                      }`}
-                    >
-                      <LogOut size={13} />
-                    </button>
-                  </div>
-                )}
                 {/* 章节列表 */}
                 <div className="flex-1 min-h-0">
                   <ChapterList
@@ -562,8 +495,73 @@ export default function Home() {
                     theme={theme}
                     colors={colors}
                     onToggleLeft={toggleLeft}
+                    bookSelector={(
+                      <BookSelector
+                        books={books}
+                        activeBookId={activeBookId}
+                        onSwitch={handleBookSwitch}
+                        onBooksChange={handleBooksChange}
+                        theme={theme}
+                        colors={colors}
+                      />
+                    )}
                   />
                 </div>
+                {currentUser && (
+                  <div
+                    className={`flex shrink-0 items-center gap-1 border-t px-2 py-2 ${
+                      theme === "dark"
+                        ? "border-slate-700 bg-slate-900 text-slate-300"
+                        : theme === "sepia"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    <Link
+                      href="/people/me"
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 hover:bg-black/5"
+                      title="我的主页"
+                    >
+                      <div
+                        className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md text-[10px] font-bold text-white"
+                        style={{ backgroundColor: currentUser.avatar_color || "#f97316" }}
+                      >
+                        <div className="flex h-full w-full items-center justify-center">{userInitials(currentUser)}</div>
+                        {avatarUrl && (
+                          <img
+                            src={avatarUrl}
+                            alt=""
+                            onError={(event) => {
+                              event.currentTarget.style.display = "none";
+                            }}
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-semibold">
+                          {currentUser.display_name || currentUser.username}
+                        </div>
+                        <div className="truncate text-[10px] opacity-60">我的主页</div>
+                      </div>
+                    </Link>
+                    <Link
+                      href="/people"
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-65 hover:bg-black/5 hover:opacity-100"
+                      title="伙伴与聊天"
+                    >
+                      <Users size={15} />
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-65 hover:bg-red-500/10 hover:text-red-500 hover:opacity-100"
+                      title="退出登录"
+                    >
+                      <LogOut size={15} />
+                    </button>
+                  </div>
+                )}
               </div>
             </aside>
             {resizeHandle("left-resize", "left")}

@@ -10,6 +10,7 @@ from sqlmodel import Session, and_, or_, select
 from app.core.auth import CurrentUser, get_current_user
 from app.db.session import get_session
 from app.models.auth import User, UserProfileRead, UserProfileUpdate
+from app.crud.settings_crud import get_settings
 from app.models.social import (
     DirectMessage,
     DirectMessageCreate,
@@ -42,6 +43,7 @@ def _profile(user: User) -> UserProfileRead:
         current_work=user.current_work,
         avatar_color=user.avatar_color or "#f97316",
         avatar_image_path=user.avatar_image_path,
+        show_background_on_profile=user.show_background_on_profile,
         is_admin=user.is_admin,
         is_active=user.is_active,
         created_at=user.created_at,
@@ -114,6 +116,8 @@ def update_my_profile(
         user.current_work = _normalize_text(payload.current_work, 240)
     if payload.avatar_color is not None:
         user.avatar_color = _normalize_avatar_color(payload.avatar_color) or user.avatar_color
+    if payload.show_background_on_profile is not None:
+        user.show_background_on_profile = payload.show_background_on_profile
 
     session.add(user)
     session.commit()
@@ -182,6 +186,29 @@ def delete_my_avatar(
     session.commit()
     session.refresh(user)
     return _profile(user)
+
+
+@router.get("/{username}/background")
+def read_user_background(
+    username: str,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    user = session.get(User, username.strip())
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="背景不存在")
+    if current_user.username != user.username and not user.show_background_on_profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主页背景不存在")
+    db_settings = get_settings(session, user_id=user.username)
+    if not db_settings or not db_settings.background_image_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="背景不存在")
+    try:
+        path = resolve_workspace_relative_path(db_settings.background_image_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="主页背景路径无效") from exc
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="主页背景不存在")
+    return _image_response(path)
 
 
 @router.get("/{username}/avatar")

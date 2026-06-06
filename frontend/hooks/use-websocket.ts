@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { AIWSRequest, AIWSMessage } from "@/types/api";
+import { AIAgentStep, AIWSRequest, AIWSMessage } from "@/types/api";
 
 const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api/v1/ai/ws";
 const ACCESS_TOKEN = process.env.NEXT_PUBLIC_APP_ACCESS_TOKEN || "";
@@ -16,6 +16,7 @@ function withAccessToken(url: string) {
 type WebSocketHandlers = {
   onToken?: (token: string) => void;
   onAnalysis?: (data: unknown) => void;
+  onAgentStep?: (step: AIAgentStep) => void;
   onDone?: () => void;
   onError?: (message: string) => void;
 };
@@ -67,6 +68,9 @@ export function useWebSocket() {
           setIsStreaming(false);
           handlers?.onDone?.();
           ws.close();
+          break;
+        case "agent_step":
+          handlers?.onAgentStep?.(data.step);
           break;
         case "error":
           settled = true;

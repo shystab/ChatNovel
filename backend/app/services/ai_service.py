@@ -27,17 +27,22 @@ from app.models.knowledge import KnowledgeChunk, KnowledgeDocument
 DEFAULT_WRITER_PERSONA = """你是一个专业的小说写作助手。
 
 核心原则：
-- 直接给结果，不解释、不废话、不道歉
-- 续写/改写时只输出正文，无任何说明
-- 回答问题时简洁精准，能一句说清绝不两句
 - 保持原作者的文风和语气
 - 中文写作默认使用正式小说语言，避免口水化表达
+- 回答问题时简洁精准
+
+输出格式（重要）：
+- 当用户要求写作（续写、改写、生成正文）时，如果需要分析上下文、策略或方向，先简要说明（1-3句话），然后用独占一行的 "---" 分隔，再输出可直接用于小说的正文
+- 正文部分应是纯粹的小说内容，不要包含任何说明、解释或元信息
+- 如果用户是在提问、讨论、闲聊，直接回答即可，不需要分隔符
 
 禁止行为：
 - 禁止以"好的"、"当然"、"我来帮你"开头
-- 禁止在正文外附加任何解释或总结
-- 禁止重复用户说过的话
+- 禁止在正文中混入解释或说明
 - 禁止过度热情的语气"""
+
+DETAILED_ANALYSIS_INSTRUCT = """【深度分析模式】
+在进行写作之前，请先深入分析：上下文承接关系、人物性格一致性、情节走向合理性、文风匹配度。分析后再输出正文。分析部分和正文之间用 "---" 分隔。"""
 
 DEFAULT_SUMMARY_SYSTEM = "你是专业小说摘要生成助手。请为以下章节内容生成简洁准确的摘要，概括核心情节和关键信息。"
 
@@ -186,23 +191,23 @@ class AIService:
             {"role": "user", "content": user}
         ]
 
-    def _get_persona(self, user_id: str, project_id: str) -> str:
-        if not self.session:
-            return DEFAULT_WRITER_PERSONA
+    def _get_persona(self, user_id: str, project_id: str, detailed_analysis: bool = False) -> str:
+        if self.session:
+            global_preset = get_enabled_preset_new(self.session, user_id=user_id)
+            if global_preset and global_preset.system_prompt.strip():
+                persona = global_preset.system_prompt.strip()
+            else:
+                user_preset = get_enabled_preset(self.session, user_id, project_id)
+                if user_preset and user_preset.system_prompt.strip():
+                    persona = user_preset.system_prompt.strip()
+                else:
+                    persona = DEFAULT_WRITER_PERSONA
+        else:
+            persona = DEFAULT_WRITER_PERSONA
 
-        # 尝试从全局预设系统获取（preset_crud）
-        global_preset = get_enabled_preset_new(self.session, user_id=user_id)
-        if global_preset and global_preset.system_prompt.strip():
-            logger.debug("Using global preset id=%s", global_preset.id)
-            return global_preset.system_prompt.strip()
-
-        # 如果全局预设没有启用的，尝试从用户特定预设系统获取（memory_crud）
-        user_preset = get_enabled_preset(self.session, user_id, project_id)
-        if user_preset and user_preset.system_prompt.strip():
-            logger.debug("Using user preset id=%s", user_preset.id)
-            return user_preset.system_prompt.strip()
-
-        return DEFAULT_WRITER_PERSONA
+        if detailed_analysis:
+            persona = persona + "\n\n" + DETAILED_ANALYSIS_INSTRUCT
+        return persona
 
     def _get_memory_context(self, user_id: str, project_id: str) -> str:
         if not self.session:
@@ -930,6 +935,7 @@ class AIService:
         book_id: int | None = None,
         current_content: str = "",
         selected_doc_ids: list[int] | None = None,
+        detailed_analysis: bool = False,
     ):
         messages = self._prepare_chat_messages(messages)
         yield {
@@ -944,7 +950,7 @@ class AIService:
         }
 
         # 构建基础 system prompt
-        persona = self._get_persona(user_id, project_id)
+        persona = self._get_persona(user_id, project_id, detailed_analysis=detailed_analysis)
         system_content = persona
         if use_memory:
             memory_ctx = self._get_memory_context(user_id, project_id)

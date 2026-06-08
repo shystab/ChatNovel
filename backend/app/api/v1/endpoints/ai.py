@@ -141,6 +141,7 @@ async def ai_ws(websocket: WebSocket):
                 book_id=req.book_id,
                 current_content=req.content or "",
                 selected_doc_ids=req.selected_doc_ids,
+                detailed_analysis=req.detailed_analysis,
             )
 
             buffer = ""

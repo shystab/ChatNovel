@@ -296,6 +296,7 @@ export interface AIWSRequest {
   project_id?: string;
   use_rag?: boolean;
   use_memory?: boolean;
+  detailed_analysis?: boolean;
   use_layered_memory?: boolean;
   use_external_rag?: boolean;
   use_chapter_rag?: boolean;

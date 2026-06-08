@@ -105,6 +105,10 @@ backend/.chroma/
 # Claude working directory
 .claude/
 
+# OpenCode
+.opencode/
+opencode.json
+
 # Testing
 coverage/
 

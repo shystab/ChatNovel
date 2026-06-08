@@ -26,6 +26,7 @@ class AIWSRequest(SQLModel):
     content: str = Field(default="")
     use_memory: bool = Field(default=True)
     max_length: int | None = Field(default=None)
+    detailed_analysis: bool = Field(default=False)
     analysis_enabled: bool = Field(default=False)
     analysis_interval_chars: int = Field(default=200)
     analysis_types: List[str] = Field(default_factory=lambda: ["repetition", "length"])

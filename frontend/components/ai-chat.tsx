@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { api, authHeaders } from "@/lib/api";
-import { Send, ArrowLeftRight, Sparkles, ChevronDown, ChevronUp, User, PanelRightClose, Library, Trash2, Plus, FileText, Database, Search, Loader2, CheckCircle2, XCircle, Brain } from "lucide-react";
+import { Send, Sparkles, ChevronDown, User, PanelRightClose, Library, Trash2, Plus, FileText, Database, Lightbulb } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
-import { AgentEditPlan, AIAgentStep, Chapter, Conversation } from "@/types/api";
+import { AIAgentStep, Chapter, Conversation } from "@/types/api";
 import DocumentSelector from "@/components/document-selector";
 import ConfirmDialog from "@/components/confirm-dialog";
-import AgentApplyReview from "@/components/agent-apply-review";
 
 interface Preset {
   id: number;
@@ -66,22 +66,6 @@ function conversationMeta(conv: Conversation) {
   return parts.join(" · ");
 }
 
-function stripHtmlToText(value: string) {
-  return (value || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function joinBlocks(...parts: string[]) {
-  return parts.map(part => part.trim()).filter(Boolean).join("\n\n");
-}
 
 const AGENT_LABELS: Record<string, string> = {
   layered_context: "自动分层上下文",
@@ -93,74 +77,20 @@ const AGENT_LABELS: Record<string, string> = {
   extract_foreshadowing_candidates: "扫描伏笔候选",
 };
 
-function applyAgentPlanPreview(currentHtml: string, plan: AgentEditPlan) {
-  let next = stripHtmlToText(currentHtml);
-  const warnings: string[] = [];
-
-  if (!plan.operations.length) {
-    warnings.push("AI 没有返回可应用的修改步骤");
-    return { preview: next, warnings };
-  }
-
-  for (const op of plan.operations) {
-    const content = (op.content || "").trim();
-    if (op.action === "append") {
-      next = joinBlocks(next, content);
-      continue;
-    }
-    if (op.action === "prepend") {
-      next = joinBlocks(content, next);
-      continue;
-    }
-    if (op.action === "replace_all") {
-      next = content;
-      continue;
-    }
-    if (op.action === "insert_before" || op.action === "insert_after") {
-      const anchor = (op.anchor || "").trim();
-      const index = anchor ? next.indexOf(anchor) : -1;
-      if (index < 0) {
-        warnings.push(`没有找到定位文本，已把“${op.action}”降级为追加`);
-        next = joinBlocks(next, content);
-        continue;
-      }
-      if (next.indexOf(anchor, index + anchor.length) >= 0) {
-        warnings.push("定位文本出现多次，预览使用第一次匹配");
-      }
-      const insertAt = op.action === "insert_after" ? index + anchor.length : index;
-      next = `${next.slice(0, insertAt).trimEnd()}\n\n${content}\n\n${next.slice(insertAt).trimStart()}`.trim();
-      continue;
-    }
-    if (op.action === "replace_text") {
-      const findText = (op.find_text || "").trim();
-      const index = findText ? next.indexOf(findText) : -1;
-      if (index < 0) {
-        warnings.push("没有找到要替换的原文，这一步已跳过");
-        continue;
-      }
-      if (next.indexOf(findText, index + findText.length) >= 0) {
-        warnings.push("替换原文出现多次，预览只替换第一次匹配");
-      }
-      next = `${next.slice(0, index)}${content}${next.slice(index + findText.length)}`.trim();
-    }
-  }
-
-  return { preview: next, warnings };
-}
-
-export default function AIChat({ onInsertContent, onReplaceContent, getEditorContent, theme, onToggleRight, bookId, chapters = [], currentChapterId = null }: AIChatProps) {
+export default function AIChat({ onInsertContent, getEditorContent, theme, onToggleRight, bookId, chapters = [], currentChapterId = null }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [isPlanningEdit, setIsPlanningEdit] = useState(false);
+  const [detailedAnalysis, setDetailedAnalysis] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
+  const dropdownAreaRef = useRef<HTMLDivElement>(null);
+  const presetBtnRef = useRef<HTMLButtonElement>(null);
   const { isStreaming, connect } = useWebSocket();
   const streamBufferRef = useRef("");
   const isFirstExchangeRef = useRef(true);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
-  const [showPresetDropdown, setShowPresetDropdown] = useState(false);
 
   // ── 对话持久化（后端） ────────────────────────────
   const convIdRef = useRef<number | null>(null);
@@ -169,6 +99,9 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const [conversationTitle, setConversationTitle] = useState("新对话");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [showConvDropdown, setShowConvDropdown] = useState(false);
+  const [convDropdownRect, setConvDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [showPresetDropdown, setShowPresetDropdown] = useState(false);
+  const [presetDropdownRect, setPresetDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [cleanupStatus, setCleanupStatus] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const [deletingConversation, setDeletingConversation] = useState(false);
@@ -176,12 +109,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   // ── 文档选择 ──────────────────────────────────
   const [showDocSelector, setShowDocSelector] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
-  const [applyProposal, setApplyProposal] = useState("");
-  const [agentPlan, setAgentPlan] = useState<AgentEditPlan | null>(null);
-  const [agentPreview, setAgentPreview] = useState("");
-  const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
   const [agentSteps, setAgentSteps] = useState<AIAgentStep[]>([]);
-  const [agentRunCollapsed, setAgentRunCollapsed] = useState(false);
 
   const BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
@@ -257,6 +185,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
 
   const switchConversation = async (conv: Conversation) => {
     setShowConvDropdown(false);
+    setConvDropdownRect(null);
     try {
       const full = await api.getConversation(conv.id);
       const msgs = (full.messages ?? []) as Message[];
@@ -303,18 +232,24 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     void Promise.resolve().then(loadPresets);
   }, [loadPresets]);
 
+  // 下拉框打开时计算 fixed 定位坐标
   useEffect(() => {
-    if (!showConvDropdown && !showPresetDropdown) return;
+    if (showConvDropdown && dropdownAreaRef.current) {
+      const rect = dropdownAreaRef.current.getBoundingClientRect();
+      setConvDropdownRect({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 240) });
+    } else {
+      setConvDropdownRect(null);
+    }
+  }, [showConvDropdown]);
 
-    const handleClickOutside = (event: MouseEvent) => {
-      if (topBarRef.current?.contains(event.target as Node)) return;
-      setShowConvDropdown(false);
-      setShowPresetDropdown(false);
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showConvDropdown, showPresetDropdown]);
+  useEffect(() => {
+    if (showPresetDropdown && presetBtnRef.current) {
+      const rect = presetBtnRef.current.getBoundingClientRect();
+      setPresetDropdownRect({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 240) });
+    } else {
+      setPresetDropdownRect(null);
+    }
+  }, [showPresetDropdown]);
 
   const scrollToBottom = () => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -360,7 +295,6 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const startStream = (request: Parameters<typeof connect>[0]) => {
     streamBufferRef.current = "";
     setAgentSteps([]);
-    setAgentRunCollapsed(false);
     addAiMessage("", true);
     const currentEditorContent = getEditorContent();
     const withExtras = {
@@ -369,7 +303,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
       ...(bookId ? { book_id: bookId } : {}),
       ...(currentChapterId ? { current_chapter_id: currentChapterId } : {}),
       ...(selectedDocIds.length > 0 ? { selected_doc_ids: selectedDocIds } : {}),
-      // 确保 content 字段存在（用于工具调用）
+      detailed_analysis: detailedAnalysis,
       ...(currentEditorContent && !request.content ? { content: currentEditorContent } : {}),
     };
 
@@ -414,35 +348,29 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     });
   };
 
-  const handleStreamFallback = async (text: string) => {
-    const trimmed = text.trim();
-    
-    if (!trimmed || isStreaming) return;
-
-    try {
-      await ensureConversation();
-    } catch {
-      // 后端不可用时仍允许本地临时对话
+  const handleRegenerate = () => {
+    // 找到最后一条 user 消息的索引
+    let lastUserIdx = -1;
+    for (let j = messages.length - 1; j >= 0; j--) {
+      if (messages[j].role === "user") {
+        lastUserIdx = j;
+        break;
+      }
     }
+    if (lastUserIdx < 0) return;
 
-    const newMessages: Message[] = [...messages, { role: "user", content: trimmed }];
-    setMessages(newMessages);
-    persistMessages(newMessages);
-    setInput("");
+    // 截断到最后一条 user 消息（移除其后的所有 AI 回复）
+    const truncated = messages.slice(0, lastUserIdx + 1);
+    const lastUserContent = truncated[lastUserIdx].content;
+    setMessages(truncated);
+    persistMessages(truncated);
 
-    const unavailableMessage = await getAiUnavailableMessage();
-    if (unavailableMessage) {
-      const finalMessages: Message[] = [...newMessages, { role: "ai", content: unavailableMessage }];
-      setMessages(finalMessages);
-      persistMessages(finalMessages);
-      return;
-    }
-
-    const historyMessages = messages.map(m => ({
-      role: m.role === "ai" ? "assistant" : m.role,
+    const historyMessages = truncated.slice(0, -1).map(m => ({
+      role: m.role === "ai" ? "assistant" as const : "user" as const,
       content: m.content,
     }));
-    historyMessages.push({ role: "user", content: trimmed });
+    historyMessages.push({ role: "user", content: lastUserContent });
+
     startStream({
       type: "chat",
       messages: historyMessages,
@@ -450,21 +378,11 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     });
   };
 
-  const handleAgentEdit = async (text: string = input) => {
+  const handleSend = async (text: string = input) => {
     const trimmed = text.trim();
-    if (!trimmed || isStreaming || isPlanningEdit) return;
+    if (!trimmed || isStreaming) return;
 
-    const currentEditorContent = getEditorContent();
-
-    setIsPlanningEdit(true);
-    setApplyProposal("");
-    setAgentPlan(null);
-    setAgentPreview("");
-    setAgentWarnings([]);
-
-    try {
-      await ensureConversation();
-    } catch {}
+    try { await ensureConversation(); } catch {}
 
     const userMsg: Message = { role: "user", content: trimmed };
     const pendingMessages: Message[] = [...messages, userMsg];
@@ -477,7 +395,6 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
       const finalMessages: Message[] = [...pendingMessages, { role: "ai", content: unavailableMessage }];
       setMessages(finalMessages);
       persistMessages(finalMessages);
-      setIsPlanningEdit(false);
       return;
     }
 
@@ -487,44 +404,15 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     }));
     historyMessages.push({ role: "user", content: trimmed });
 
-    try {
-      const plan = await api.createAgentEditPlan({
-        instruction: trimmed,
-        messages: historyMessages,
-        use_memory: true,
-        content: currentEditorContent,
-        book_id: bookId ?? null,
-        current_chapter_id: currentChapterId ?? null,
-        selected_doc_ids: selectedDocIds,
-      });
-      if (plan.operations.length > 0) {
-        const { preview, warnings } = applyAgentPlanPreview(currentEditorContent, plan);
-        setAgentPlan(plan);
-        setAgentPreview(preview);
-        setAgentWarnings(warnings);
-      } else {
-        setAgentPlan(null);
-        setAgentPreview("");
-        setAgentWarnings([]);
-      }
-
-      const riskText = plan.risk === "high" ? "高风险" : plan.risk === "low" ? "低风险" : "中风险";
-      const aiContent = plan.operations.length
-        ? `${plan.reply || `已生成修改方案：${plan.summary || "可确认写作修改"}`}（${plan.operations.length} 步，${riskText}）。`
-        : (plan.reply || "没有生成可应用的修改步骤，可以换一种更具体的说法再试。");
-      const finalMessages: Message[] = [...pendingMessages, { role: "ai", content: aiContent }];
-      setMessages(finalMessages);
-      persistMessages(finalMessages);
-    } catch (error) {
-      console.warn("Agent decision failed, falling back to streaming chat", error);
-      await handleStreamFallback(trimmed);
-    } finally {
-      setIsPlanningEdit(false);
-    }
+    startStream({
+      type: "chat",
+      messages: historyMessages,
+      use_memory: true,
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAgentEdit(); }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -535,6 +423,8 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     try {
       setShowConvDropdown(false);
       setShowPresetDropdown(false);
+      setConvDropdownRect(null);
+      setPresetDropdownRect(null);
       await ensureConversation();
       setShowDocSelector(true);
     } catch {}
@@ -550,39 +440,15 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     );
   };
 
-  const handleApplyProposal = (mode: "append" | "replace") => {
-    const proposal = applyProposal.trim();
-    if (!proposal) return;
-    if (mode === "replace" && onReplaceContent) {
-      onReplaceContent(proposal);
-    } else {
-      onInsertContent(proposal);
-    }
-    setApplyProposal("");
-  };
-
-  const handleApplyAgentPlan = () => {
-    const preview = agentPreview.trim();
-    if (!preview) return;
-    if (onReplaceContent) {
-      onReplaceContent(preview);
-    } else {
-      onInsertContent(preview);
-    }
-    setAgentPlan(null);
-    setAgentPreview("");
-    setAgentWarnings([]);
-  };
-
   const startNewConversation = () => {
     resetDraftConversation();
     setShowConvDropdown(false);
+    setConvDropdownRect(null);
   };
 
   const generateAutoTitle = async (firstUserMsg: string) => {
     if (!convIdRef.current) return;
     let title = firstUserMsg.trim();
-    if (!title) title = firstUserMsg.trim();
     // 截取前 15 字
     if (title.length > 15) title = title.slice(0, 15) + "…";
     if (!title) return;
@@ -629,7 +495,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
     }
   };
 
-  const busy = isStreaming || isPlanningEdit;
+  const busy = isStreaming;
 
   // ── 主题相关样式 ──────────────────────────────────────────────────────────────
   const borderClass = theme === 'dark' ? 'border-slate-700/60' : theme === 'sepia' ? 'border-amber-200' : 'border-slate-100';
@@ -640,7 +506,6 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const hoverBgClass = theme === 'dark' ? 'hover:bg-slate-800' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
   const inputBgClass = theme === 'dark' ? 'bg-slate-800 border-slate-700 text-slate-200 placeholder:text-slate-600 focus:border-slate-500 focus:bg-slate-700' : theme === 'sepia' ? 'bg-amber-100/50 border-amber-200 text-amber-900 placeholder:text-amber-400 focus:border-amber-400 focus:bg-amber-50' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-300 focus:border-slate-400 focus:bg-white';
   const sendBtnClass = theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-600' : theme === 'sepia' ? 'bg-amber-800 hover:bg-amber-700 disabled:bg-amber-200 disabled:text-amber-400' : 'bg-slate-900 hover:bg-slate-700 disabled:bg-slate-100 disabled:text-slate-300';
-  const dropdownBg = theme === 'dark' ? 'bg-slate-800 border-slate-700' : theme === 'sepia' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200';
   const dropdownItemHover = theme === 'dark' ? 'hover:bg-slate-700' : theme === 'sepia' ? 'hover:bg-amber-100' : 'hover:bg-slate-50';
   const userMsgBg = theme === 'dark' ? 'bg-slate-700 text-slate-100' : theme === 'sepia' ? 'bg-amber-800 text-white' : 'bg-slate-900 text-white';
   const inputAreaBg = theme === 'dark' ? 'bg-slate-900 border-slate-700/60' : theme === 'sepia' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-100';
@@ -651,13 +516,32 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
   const contextPillActive = theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : theme === 'sepia' ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-slate-100 border-slate-300 text-slate-800';
   const currentChapter = currentChapterId ? chapters.find(chapter => chapter.id === currentChapterId) ?? null : null;
   const selectedPreset = selectedPresetId ? presets.find(preset => preset.id === selectedPresetId) ?? null : null;
+  const parseAiContent = (content: string, streaming: boolean) => {
+    if (streaming || !content) return { analysis: content, prose: null };
+    const sep = content.match(/\n-{3,}\n/);
+    if (!sep || sep.index === undefined) return { analysis: content, prose: null };
+    const idx = sep.index;
+    const analysis = content.slice(0, idx).trim();
+    const prose = content.slice(idx + sep[0].length).trim();
+    return { analysis: analysis || null, prose: prose || null };
+  };
+  const renderAiContent = (msg: Message) => {
+    const parts = parseAiContent(msg.content, !!msg.isStreaming);
+    const showProse = !msg.isStreaming && !!parts.prose;
+    const showAnalysis = !msg.isStreaming && !!parts.analysis && !!parts.prose;
+    if (msg.isStreaming && msg.content === "")
+      return <div className="flex space-x-1 py-1"><span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "0ms" }} /><span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "150ms" }} /><span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "300ms" }} /></div>;
+    if (showProse)
+      return <>{showAnalysis && <div className={`text-sm leading-relaxed ${textClass}`}><p className="whitespace-pre-wrap">{parts.analysis}</p></div>}<div className={`relative group rounded-lg border-l-2 border-blue-500/50 pl-3 py-2 pr-2 ${theme === 'dark' ? 'bg-slate-800/40' : theme === 'sepia' ? 'bg-amber-100/30' : 'bg-slate-50'}`}><div className={`text-sm leading-relaxed ${textClass}`}><p className="whitespace-pre-wrap">{parts.prose}</p></div><div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => onInsertContent(parts.prose!)} className="flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-400 px-2 py-1 rounded" type="button"><Plus size={11} /> 写入编辑器</button><button onClick={async () => { try { await navigator.clipboard.writeText(parts.prose!); } catch {} }} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">复制</button><button onClick={handleRegenerate} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">重新生成</button></div></div></>;
+    return <><div className={`text-sm leading-relaxed ${textClass} ${msg.isStreaming ? "opacity-80" : ""}`}><p className="whitespace-pre-wrap">{msg.content}{msg.isStreaming && <span className={`inline-block w-0.5 h-3.5 ${theme === 'dark' ? 'bg-slate-400' : 'bg-slate-500'} ml-0.5 animate-caret align-middle`} />}</p></div>{!msg.isStreaming && msg.content && <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => onInsertContent(msg.content)} className="flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-400 px-2 py-1 rounded" type="button"><Plus size={11} /> 写入编辑器</button><button onClick={async () => { try { await navigator.clipboard.writeText(msg.content); } catch {} }} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">复制</button><button onClick={handleRegenerate} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">重新生成</button></div>}</>;
+  };
 
   return (
-    <div className={`flex flex-col h-full ${bgClass} border-l ${borderClass}`}>
+    <div className={`flex flex-col h-full min-h-0 ${bgClass} border-l ${borderClass}`}>
       {/* 顶部栏 */}
       <header ref={topBarRef} className={`px-3 py-2 border-b ${borderClass} flex items-center gap-2 ${bgClass} shrink-0`}>
         {/* 对话选择器 */}
-        <div className="relative flex-1 min-w-0">
+        <div className="relative flex-1 min-w-0" ref={dropdownAreaRef}>
           <div className="flex items-center gap-1">
             {isEditingTitle ? (
               <input
@@ -691,9 +575,18 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
             </button>
           </div>
 
-          {/* 对话下拉列表 */}
-          {showConvDropdown && (
-            <div className={`absolute top-full left-0 right-0 mt-1 ${dropdownBg} border rounded-lg shadow-lg z-[500] overflow-hidden`}>
+          {/* 对话下拉列表（portal 到 body，完全不受父级 CSS 影响） */}
+          {showConvDropdown && convDropdownRect && document.body && createPortal(
+            <div
+              className={`fixed z-[9999] border rounded-lg shadow-lg overflow-y-auto max-h-80`}
+              style={{
+                top: convDropdownRect.top,
+                left: convDropdownRect.left,
+                width: Math.max(convDropdownRect.width, 240),
+                backgroundColor: theme === 'dark' ? '#1e293b' : theme === 'sepia' ? '#fffbeb' : '#ffffff',
+                borderColor: theme === 'dark' ? '#334155' : theme === 'sepia' ? '#fde68a' : '#e2e8f0',
+              }}
+            >
               <div className={`px-3 py-2 border-b ${borderClass} flex items-center justify-between`}>
                 <span className={`text-[9px] font-bold ${mutedClass} uppercase tracking-widest`}>对话列表</span>
                 <button
@@ -755,7 +648,8 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
                   <p className={`text-[9px] ${mutedClass} text-center`}>{cleanupStatus}</p>
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
 
@@ -764,22 +658,33 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
           {/* 人格预设选择器 */}
           <div className="relative">
             <button
-              onClick={() => setShowPresetDropdown(!showPresetDropdown)}
+              ref={presetBtnRef}
+              onClick={() => setShowPresetDropdown(v => !v)}
               className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg flex items-center gap-0.5`}
               title="选择人格预设"
               type="button"
+              data-preset-toggle="true"
             >
               <User size={13} />
               {selectedPresetId && <span className={`text-[9px] font-bold px-1 rounded ${badgeClass}`}>✓</span>}
             </button>
-            {showPresetDropdown && (
-              <div className={`absolute top-full right-0 mt-1 w-60 max-w-[calc(100vw-2rem)] ${dropdownBg} border rounded-lg shadow-lg z-[500] overflow-hidden`}>
+            {showPresetDropdown && presetDropdownRect && document.body && createPortal(
+              <div
+                className={`fixed z-[9999] border rounded-lg shadow-lg overflow-y-auto max-h-80`}
+                style={{
+                  top: presetDropdownRect.top,
+                  left: presetDropdownRect.left,
+                  width: presetDropdownRect.width,
+                  backgroundColor: theme === 'dark' ? '#1e293b' : theme === 'sepia' ? '#fffbeb' : '#ffffff',
+                  borderColor: theme === 'dark' ? '#334155' : theme === 'sepia' ? '#fde68a' : '#e2e8f0',
+                }}
+              >
                 <div className={`px-3 py-2 border-b ${borderClass}`}>
                   <span className={`text-[9px] font-bold ${mutedClass} uppercase tracking-widest`}>人格预设</span>
                 </div>
                 <div className="max-h-52 overflow-y-auto">
                   <button
-                    onClick={() => { setSelectedPresetId(null); setShowPresetDropdown(false); }}
+                    onClick={() => { setSelectedPresetId(null); setShowPresetDropdown(false); setPresetDropdownRect(null); }}
                     className={`w-full px-3 py-2.5 text-left ${dropdownItemHover} transition-colors ${selectedPresetId === null ? selectedDropdownBg : ''}`}
                     type="button"
                   >
@@ -789,7 +694,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
                   {presets.map(preset => (
                     <button
                       key={preset.id}
-                      onClick={() => { setSelectedPresetId(preset.id); setShowPresetDropdown(false); }}
+                      onClick={() => { setSelectedPresetId(preset.id); setShowPresetDropdown(false); setPresetDropdownRect(null); }}
                       className={`w-full px-3 py-2.5 text-left ${dropdownItemHover} transition-colors ${selectedPresetId === preset.id ? selectedDropdownBg : ''}`}
                       type="button"
                     >
@@ -801,7 +706,8 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
                     </button>
                   ))}
                 </div>
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -814,6 +720,16 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
           >
             <Library size={13} />
             {selectedDocIds.length > 0 && <span className="text-[9px] font-bold text-blue-500">{selectedDocIds.length}</span>}
+          </button>
+
+          {/* 深度分析开关 */}
+          <button
+            onClick={() => setDetailedAnalysis(v => !v)}
+            className={`p-1.5 transition-colors rounded-lg flex items-center gap-0.5 ${detailedAnalysis ? "text-blue-500 bg-blue-500/10" : mutedClass + " " + hoverBgClass}`}
+            title="深度分析模式：AI 会先分析上下文和写作策略，再输出正文"
+            type="button"
+          >
+            <Lightbulb size={13} />
           </button>
 
           {/* 关闭 AI 面板 */}
@@ -886,64 +802,8 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
       />
 
       {/* 消息区 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-        {agentSteps.length > 0 && (
-          <section className={`overflow-hidden rounded-lg border ${borderClass} ${contextBarBg} ${isStreaming ? "sticky top-0 z-20 shadow-sm" : ""}`}>
-            <button
-              type="button"
-              onClick={() => setAgentRunCollapsed((current) => !current)}
-              className={`flex w-full items-center gap-2 px-3 py-2 text-left ${hoverBgClass}`}
-            >
-              <div className={`rounded-md p-1.5 ${badgeClass}`}>
-                <Brain size={13} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className={`text-xs font-semibold ${headingClass}`}>
-                  {isStreaming ? "Agent 正在处理" : "Agent 执行记录"}
-                </div>
-                <div className={`mt-0.5 truncate text-[10px] ${mutedClass}`}>
-                  {agentSteps.filter((step) => step.status === "completed").length} / {agentSteps.length} 步完成
-                </div>
-              </div>
-              {agentRunCollapsed ? <ChevronDown size={13} className={mutedClass} /> : <ChevronUp size={13} className={mutedClass} />}
-            </button>
-
-            {!agentRunCollapsed && (
-              <div className={`border-t px-3 py-2 ${borderClass}`}>
-                {agentSteps.map((step, index) => {
-                  const title = AGENT_LABELS[step.title] || step.title;
-                  const statusIcon = step.status === "running"
-                    ? <Loader2 size={13} className="animate-spin text-orange-500" />
-                    : step.status === "failed"
-                      ? <XCircle size={13} className="text-red-500" />
-                      : <CheckCircle2 size={13} className="text-emerald-500" />;
-                  return (
-                    <div key={step.id} className="relative flex gap-2.5 pb-2.5 last:pb-0">
-                      {index < agentSteps.length - 1 && <div className={`absolute left-[6px] top-4 h-[calc(100%-0.5rem)] w-px ${theme === "dark" ? "bg-slate-700" : "bg-slate-200"}`} />}
-                      <div className="relative z-10 mt-0.5 shrink-0">{statusIcon}</div>
-                      <div className="min-w-0 flex-1">
-                        <div className={`text-xs font-medium ${headingClass}`}>{title}</div>
-                        {step.detail && <div className={`mt-0.5 text-[10px] leading-4 ${mutedClass}`}>{step.detail}</div>}
-                        {step.content && (
-                          <details className="group mt-1">
-                            <summary className={`flex cursor-pointer list-none items-center gap-1 text-[10px] font-medium ${mutedClass}`}>
-                              <Search size={10} />
-                              查看读取内容
-                              <ChevronDown size={10} className="transition-transform group-open:rotate-180" />
-                            </summary>
-                            <pre className={`mt-1 max-h-44 overflow-auto whitespace-pre-wrap rounded-md border px-2 py-1.5 text-[10px] leading-4 ${borderClass} ${textClass}`}>{step.content}</pre>
-                          </details>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        )}
-
-        {messages.length === 0 && (
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+        {messages.length === 0 && !isStreaming && (
           <div className="h-full flex flex-col items-center justify-center space-y-4 py-8">
             <div className={`w-9 h-9 rounded-2xl ${theme === 'dark' ? 'bg-slate-800' : theme === 'sepia' ? 'bg-amber-100' : 'bg-slate-50'} flex items-center justify-center`}>
               <Sparkles size={16} className={mutedClass} />
@@ -955,44 +815,43 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
           </div>
         )}
 
-        {messages.map((msg, i) => (
+        {messages.map((msg, i) => {
+          // 在当前正在流式输出的 AI 消息之前插入 Agent 步骤
+          const showAgentBefore = msg.role === 'ai' && msg.isStreaming && agentSteps.length > 0
+            && i === messages.length - 1;
+
+          return (
           <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+            {showAgentBefore && agentSteps.length > 0 && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+                {agentSteps.map(step => {
+                  const label = AGENT_LABELS[step.title] || step.title;
+                  const dot = step.status === "running" ? "●" : step.status === "failed" ? "✕" : "✓";
+                  const color = step.status === "running"
+                    ? "text-orange-500"
+                    : step.status === "failed"
+                      ? "text-red-500"
+                      : "text-emerald-500";
+                  return (
+                    <span key={step.id} className={`text-[11px] font-medium ${color}`}>
+                      {dot} {label}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
             {msg.role === "user" ? (
               <div className={`max-w-[90%] ${userMsgBg} text-sm px-3 py-2 rounded-2xl rounded-tr-sm leading-relaxed`}>
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               </div>
             ) : (
-              <div className="max-w-[96%] space-y-1.5">
-                <div className={`text-sm leading-relaxed ${textClass} ${msg.isStreaming ? "opacity-80" : ""}`}>
-                  {msg.isStreaming && msg.content === "" ? (
-                    <div className="flex space-x-1 py-1">
-                      <span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "0ms" }} />
-                      <span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "150ms" }} />
-                      <span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "300ms" }} />
-                    </div>
-                  ) : (
-                    <p className="whitespace-pre-wrap">{msg.content}{msg.isStreaming && <span className={`inline-block w-0.5 h-3.5 ${theme === 'dark' ? 'bg-slate-400' : 'bg-slate-500'} ml-0.5 animate-caret align-middle`} />}</p>
-                  )}
-                </div>
-                {!msg.isStreaming && msg.content && (
-                  <button
-                    onClick={() => {
-                      setAgentPlan(null);
-                      setAgentPreview("");
-                      setAgentWarnings([]);
-                      setApplyProposal(msg.content);
-                    }}
-                    className={`flex items-center space-x-1.5 text-[10px] font-bold ${mutedClass} ${hoverBgClass} px-2 py-1 rounded-lg transition-colors`}
-                    type="button"
-                  >
-                    <ArrowLeftRight size={10} />
-                    <span>写入预览</span>
-                  </button>
-                )}
+              <div className="max-w-[96%] space-y-2">
+                {renderAiContent(msg)}
               </div>
             )}
           </div>
-        ))}
+        );
+        })}
       </div>
 
       {/* 输入区 */}
@@ -1010,7 +869,7 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
             style={{ minHeight: "40px", maxHeight: "120px" }}
           />
           <button
-            onClick={() => handleAgentEdit()}
+            onClick={() => handleSend()}
             disabled={!input.trim() || busy}
             className={`shrink-0 w-9 h-9 flex items-center justify-center rounded-xl text-white transition-all ${sendBtnClass}`}
             type="button"
@@ -1021,22 +880,14 @@ export default function AIChat({ onInsertContent, onReplaceContent, getEditorCon
           </button>
         </div>
       </div>
-      <AgentApplyReview
-        open={Boolean(applyProposal || agentPlan)}
-        theme={theme}
-        currentContent={getEditorContent()}
-        proposal={agentPlan ? agentPreview : applyProposal}
-        plan={agentPlan}
-        warnings={agentWarnings}
-        onCancel={() => {
-          setApplyProposal("");
-          setAgentPlan(null);
-          setAgentPreview("");
-          setAgentWarnings([]);
-        }}
-        onApply={handleApplyProposal}
-        onApplyPlan={handleApplyAgentPlan}
-      />
+      {/* Portal 遮罩层 — 在 body 层级捕获外部点击 */}
+      {(showConvDropdown || showPresetDropdown) && document.body && createPortal(
+        <div
+          className="fixed inset-0 z-[9998]"
+          onClick={() => { setShowConvDropdown(false); setShowPresetDropdown(false); setConvDropdownRect(null); setPresetDropdownRect(null); }}
+        />,
+        document.body
+      )}
     </div>
   );
 }

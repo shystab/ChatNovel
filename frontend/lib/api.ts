@@ -37,12 +37,12 @@ const PROJECT_ID = "default_project";
 const AUTH_TOKEN_KEY = "chatnovel-auth-token";
 const AUTH_USER_KEY = "chatnovel-auth-user";
 
-export function getAuthToken() {
+function getAuthToken() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem(AUTH_TOKEN_KEY) || "";
 }
 
-export function setAuthSession(auth: AuthResponse) {
+function setAuthSession(auth: AuthResponse) {
   if (typeof window === "undefined") return;
   localStorage.setItem(AUTH_TOKEN_KEY, auth.access_token);
   localStorage.setItem(AUTH_USER_KEY, JSON.stringify(auth.user));
@@ -251,6 +251,12 @@ export const api = {
     }),
   deleteChapterInBook: (bookId: number, chapterId: number) =>
     req<void>(`${BASE}/books/${bookId}/chapters/${chapterId}`, { method: "DELETE" }),
+  reorderChapters: (bookId: number, chapterIds: number[]) =>
+    req<{ reordered: number }>(`${BASE}/books/${bookId}/chapters/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chapter_ids: chapterIds }),
+    }),
 
   // ── Chapters (旧接口，向后兼容) ────────────────
   getChapters: () => req<Chapter[]>(`${BASE}/chapters/`),

@@ -5,7 +5,7 @@ import io
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Body, status
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session, select, func
+from sqlmodel import SQLModel, Session, select, func
 from typing import Annotated, List
 
 from app.db.session import get_session
@@ -412,6 +412,37 @@ def update_chapter_in_book(
     updated = update_chapter(session, chapter, chapter_in)
     write_chapter_file(updated)
     return updated
+
+
+class ReorderRequest(SQLModel):
+    """章节排序请求"""
+    chapter_ids: list[int]
+
+
+@router.post(
+    "/{book_id}/chapters/reorder",
+    summary="批量重排章节顺序",
+    description="传入按新顺序排列的章节 ID 列表，系统自动更新 order 字段为 1,2,3...",
+)
+def reorder_chapters(
+    book_id: Annotated[int, Path(ge=1)],
+    req: Annotated[ReorderRequest, Body()],
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+):
+    _get_book_or_404(book_id, session, current_user.username)
+    chapters = get_chapters_by_book(session, book_id, limit=5000)
+    chapter_map = {ch.id: ch for ch in chapters}
+
+    for i, ch_id in enumerate(req.chapter_ids, start=1):
+        chapter = chapter_map.get(ch_id)
+        if not chapter:
+            raise HTTPException(status_code=404, detail=f"Chapter {ch_id} not found in book")
+        chapter.order = i
+        session.add(chapter)
+
+    session.commit()
+    return {"reordered": len(req.chapter_ids)}
 
 
 @router.delete(

@@ -186,6 +186,55 @@ export default function Home() {
     void init();
   }, []);
 
+  // ── 切回页面时刷新（跨设备同步） ────────────────
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!activeBookId) return;
+
+      api.listBooks().then(bookList => {
+        setBooks(bookList);
+        if (bookList.length > 0 && !bookList.some(b => b.id === activeBookId)) {
+          const firstId = bookList[0].id;
+          setActiveBookId(firstId);
+          api.listChapters(firstId).then(chapters => setChapters(chapters)).catch(() => {});
+          return;
+        }
+        if (bookList.length === 0) {
+          setActiveBookId(null);
+          setChapters([]);
+          setSelectedChapterId(null);
+          setChapter(null);
+          setContent("");
+          return;
+        }
+      }).catch(() => {});
+
+      api.listChapters(activeBookId).then(chapters => {
+        setChapters(chapters);
+        setSelectedChapterId(prev => {
+          if (prev && !chapters.some(c => c.id === prev)) {
+            const first = chapters[0];
+            if (first) {
+              api.getChapterInBook(activeBookId, first.id).then(data => {
+                setChapter(data);
+                setContent(data.content);
+                lastSavedRef.current = data.content;
+                setStatus("已同步");
+              }).catch(() => {});
+              return first.id;
+            }
+            return null;
+          }
+          return prev;
+        });
+      }).catch(() => {});
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [activeBookId]);
+
   const handleLogout = useCallback(() => {
     api.logout();
     try {
@@ -442,6 +491,7 @@ export default function Home() {
       id={id}
       role="separator"
       aria-orientation="vertical"
+      tabIndex={-1}
       className="group relative h-full w-2 cursor-col-resize outline-none"
       onMouseDown={(event) => startResize(side, event)}
     >
@@ -592,25 +642,25 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 右侧：AI 对话 */}
-        {showRight && (
-          <>
-            {resizeHandle("right-resize", "right")}
-            <aside id="ai-sidebar" className={`min-w-0 overflow-hidden ${hasWorkspaceBackground ? "p-2 pl-0" : ""}`}>
-              <AIChat
-                onInsertContent={insertContent}
-                onReplaceContent={replaceContent}
-                getEditorContent={getEditorContent}
-                theme={theme}
-                colors={colors}
-                onToggleRight={toggleRight}
-                bookId={activeBookId}
-                chapters={chapters}
-                currentChapterId={selectedChapterId}
-              />
-            </aside>
-          </>
-        )}
+        {/* 右侧：AI 对话（折叠时 display:none 不卸载组件，保留 WebSocket 连接） */}
+        {showRight && resizeHandle("right-resize", "right")}
+        <aside
+          id="ai-sidebar"
+          className={`min-w-0 overflow-hidden ${hasWorkspaceBackground ? "p-2 pl-0" : ""}`}
+          style={{ display: showRight ? undefined : "none" }}
+        >
+          <AIChat
+            onInsertContent={insertContent}
+            onReplaceContent={replaceContent}
+            getEditorContent={getEditorContent}
+            theme={theme}
+            colors={colors}
+            onToggleRight={toggleRight}
+            bookId={activeBookId}
+            chapters={chapters}
+            currentChapterId={selectedChapterId}
+          />
+        </aside>
 
       </div>
 

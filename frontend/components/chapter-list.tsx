@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import { Chapter } from "@/types/api";
 import { api, authHeaders, withAccessToken } from "@/lib/api";
-import { ArrowDown, ArrowUp, Download, Plus, Search, Settings, Trash2, Pencil, Check, X, PanelLeftClose, FileText } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Plus, Search, Settings, Trash2, Pencil, Check, X, PanelLeftClose, FileText, GripVertical } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
 import ConfirmDialog from "@/components/confirm-dialog";
 
@@ -268,6 +268,8 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
   const [deleting, setDeleting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [movingId, setMovingId] = useState<number | null>(null);
+  const [dragId, setDragId] = useState<number | null>(null);
+  const [dragOverId, setDragOverId] = useState<number | null>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -381,6 +383,67 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
     }
   };
 
+  const orderedChapters = [...chapters].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const query = searchQuery.trim().toLowerCase();
+  const queryTerms = query.split(/\s+/).filter(Boolean);
+  const visibleChapters = query
+    ? orderedChapters.filter(chapter => {
+        const haystack = `${chapter.title} ${chapter.summary || ""} ${plainText(chapter.content)}`.toLowerCase();
+        return queryTerms.every(term => haystack.includes(term));
+      })
+    : orderedChapters;
+  const totalChars = chapters.reduce((sum, chapter) => sum + countNovelChars(chapter.content), 0);
+
+  // ── 拖拽排序 ─────────────────────────────────────
+  const handleDragStart = (chapterId: number) => {
+    setDragId(chapterId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, chapterId: number) => {
+    e.preventDefault();
+    setDragOverId(chapterId);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverId(null);
+  };
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetId: number) => {
+    e.preventDefault();
+    setDragOverId(null);
+    const sourceId = dragId;
+    if (!sourceId || sourceId === targetId || !bookId) return;
+    setDragId(null);
+
+    // 把 source 移到 target 的位置
+    const ids = orderedChapters.map(c => c.id);
+    const srcIdx = ids.indexOf(sourceId);
+    const tgtIdx = ids.indexOf(targetId);
+    if (srcIdx < 0 || tgtIdx < 0) return;
+
+    ids.splice(srcIdx, 1);
+    ids.splice(tgtIdx, 0, sourceId);
+
+    // 乐观更新 UI
+    const reordered = ids.map((id, idx) => {
+      const ch = chapters.find(c => c.id === id)!;
+      return { ...ch, order: idx + 1 };
+    });
+    onChaptersChange(reordered);
+
+    try {
+      await api.reorderChapters(bookId, ids);
+    } catch {
+      // 失败时回退
+      onChaptersChange(chapters);
+    }
+  }, [dragId, bookId, orderedChapters, chapters, onChaptersChange]);
+
+  const handleDragEnd = () => {
+    setDragId(null);
+    setDragOverId(null);
+  };
+
   const bgClass = theme === 'dark' ? 'bg-slate-900' : theme === 'sepia' ? 'bg-amber-50/80' : 'bg-slate-50/60';
   const borderClass = theme === 'dark' ? 'border-slate-800' : theme === 'sepia' ? 'border-amber-200' : 'border-slate-100';
   const cardBgClass = theme === 'dark' ? 'bg-slate-800/80' : theme === 'sepia' ? 'bg-amber-100/50' : 'bg-white/90';
@@ -392,16 +455,6 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
   const selectedBgClass = theme === 'dark' ? 'bg-slate-800 ring-slate-700' : theme === 'sepia' ? 'bg-amber-100 ring-amber-300' : 'bg-white ring-slate-200';
   const inputBgClass = theme === 'dark' ? 'bg-slate-950/40' : theme === 'sepia' ? 'bg-amber-50/80' : 'bg-white/80';
   const markClass = theme === 'dark' ? 'bg-amber-400/30 text-amber-100' : theme === 'sepia' ? 'bg-amber-300/60 text-amber-950' : 'bg-yellow-200/80 text-slate-900';
-  const orderedChapters = [...chapters].sort((a, b) => (a.order || 0) - (b.order || 0));
-  const query = searchQuery.trim().toLowerCase();
-  const queryTerms = query.split(/\s+/).filter(Boolean);
-  const visibleChapters = query
-    ? orderedChapters.filter(chapter => {
-        const haystack = `${chapter.title} ${chapter.summary || ""} ${plainText(chapter.content)}`.toLowerCase();
-        return queryTerms.every(term => haystack.includes(term));
-      })
-    : orderedChapters;
-  const totalChars = chapters.reduce((sum, chapter) => sum + countNovelChars(chapter.content), 0);
 
   return (
     <div className={`flex flex-col h-full ${bgClass} border-r ${borderClass}`}>
@@ -497,11 +550,19 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
               return (
               <li
                 key={chapter.id}
+                draggable={editingId !== chapter.id}
+                onDragStart={() => handleDragStart(chapter.id)}
+                onDragOver={(e) => handleDragOver(e, chapter.id)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => { void handleDrop(e, chapter.id); }}
+                onDragEnd={handleDragEnd}
                 onClick={() => editingId !== chapter.id && onChapterSelect(chapter.id)}
                 className={`group relative px-3 py-2 cursor-pointer rounded-lg transition-all ${
                   selectedChapterId === chapter.id
                     ? `${selectedBgClass} shadow-sm ring-1`
-                    : hoverBgClass
+                    : dragOverId === chapter.id
+                      ? `${hoverBgClass} ring-1 ring-blue-400/50`
+                      : hoverBgClass
                 }`}
               >
                 {editingId === chapter.id ? (
@@ -519,10 +580,11 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
                 ) : (
                   <div className="space-y-1">
                     <div className="flex items-center space-x-2">
+                      <GripVertical size={12} className={`shrink-0 opacity-30 group-hover:opacity-60 transition-opacity cursor-grab active:cursor-grabbing ${mutedClass}`} />
                       <span className={`text-[10px] font-bold shrink-0 w-4 text-right ${
                         selectedChapterId === chapter.id ? textClass : mutedClass
                       }`}>
-                        {String(chapter.order || 0).padStart(2, "0")}
+                        {String(fullIndex + 1).padStart(2, "0")}
                       </span>
                       <span className={`flex-1 text-xs truncate ${
                         selectedChapterId === chapter.id ? `${headingClass} font-semibold` : textClass

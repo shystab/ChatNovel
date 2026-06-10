@@ -111,7 +111,7 @@ export function useWebSocket() {
         wsRef.current.close();
       }
     };
-  }, []);
+  }, [wsRef]);
 
   return {
     isStreaming,

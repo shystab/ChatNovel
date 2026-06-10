@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
 import { KnowledgeBase } from "@/types/api";
 import { X, FileText, Database, Check, Loader2 } from "lucide-react";
@@ -54,13 +54,22 @@ export default function DocumentSelector({
     }
   }, []);
 
+  // 打开时在渲染阶段同步 state，避免 effect 延迟导致额外渲染
+  const prevOpenRef = useRef(isOpen);
+  if (isOpen && !prevOpenRef.current) {
+    prevOpenRef.current = true;
+    setSelectedIds(new Set(initialSelectedIds));
+    setError("");
+  }
+  if (!isOpen && prevOpenRef.current) {
+    prevOpenRef.current = false;
+  }
+
   useEffect(() => {
     if (isOpen) {
-      setSelectedIds(new Set(initialSelectedIds));
-      setError("");
       void loadDocuments();
     }
-  }, [isOpen, initialSelectedIds, loadDocuments]);
+  }, [isOpen, loadDocuments]);
 
   const toggle = (id: number) => {
     setSelectedIds(prev => {

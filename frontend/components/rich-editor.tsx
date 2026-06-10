@@ -104,6 +104,23 @@ export default function RichEditor({
         class: "novel-writing-surface prose focus:outline-none min-h-full max-w-none",
         spellcheck: "false",
       },
+      transformPastedHTML: (html) => {
+        // 把粘贴进来的 HTML 拍平成干净的段落结构，确保首行缩进和段落间距生效
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const body = doc.body;
+
+        // 提取纯文本，按双换行分段
+        const text = body.textContent || "";
+        const paragraphs = text.split(/\n{2,}/).filter(p => p.trim());
+
+        if (paragraphs.length > 0) {
+          return paragraphs
+            .map(p => `<p>${p.trim().replace(/\n/g, "<br>")}</p>`)
+            .join("");
+        }
+
+        return html;
+      },
     },
   });
 
@@ -116,11 +133,11 @@ export default function RichEditor({
 
   // 章节切换时自动聚焦到编辑器末尾
   useEffect(() => {
-    if (editor && chapter?.id) {
-      setTimeout(() => {
-        editor.commands.focus("end");
-      }, 50);
-    }
+    if (!editor || !chapter?.id) return;
+    const timer = setTimeout(() => {
+      editor.commands.focus("end");
+    }, 50);
+    return () => clearTimeout(timer);
   }, [chapter?.id, editor]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { api, authHeaders } from "@/lib/api";
 import { Send, Sparkles, ChevronDown, User, PanelRightClose, Library, Trash2, Plus, FileText, Database, Lightbulb } from "lucide-react";
@@ -138,7 +138,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     setSelectedDocIds([]);
     isFirstExchangeRef.current = true;
     localStorage.removeItem(CONV_ID_KEY);
-    localStorage.removeItem("ai-chat-messages");
+    localStorage.removeItem("ai-chat-messages:v1");
   }, []);
 
   const ensureConversation = useCallback(async () => {
@@ -176,7 +176,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
         }
       }
 
-      const saved = localStorage.getItem("ai-chat-messages");
+      const saved = localStorage.getItem("ai-chat-messages:v1");
       resetDraftConversation();
       if (saved) { try { setMessages(JSON.parse(saved)); } catch {} }
     }
@@ -221,10 +221,10 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
         setConversations(prev => [updated, ...prev.filter(conv => conv.id !== updated.id)]);
       }).catch(() => {
         // 降级到 localStorage
-        localStorage.setItem("ai-chat-messages", JSON.stringify(msgs));
+        localStorage.setItem("ai-chat-messages:v1", JSON.stringify(msgs));
       });
     } else {
-      localStorage.setItem("ai-chat-messages", JSON.stringify(msgs));
+      localStorage.setItem("ai-chat-messages:v1", JSON.stringify(msgs));
     }
   };
 
@@ -310,7 +310,10 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     connect(withExtras, {
       onToken: (token) => {
         streamBufferRef.current += token;
-        updateLastAiMessage(streamBufferRef.current, true);
+        // flushSync 强制每个 token 立即渲染，避免 React 18 批处理合并 WS 消息
+        flushSync(() => {
+          updateLastAiMessage(streamBufferRef.current, true);
+        });
       },
       onAgentStep: (step) => {
         setAgentSteps((current) => {

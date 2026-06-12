@@ -25,8 +25,10 @@ import {
   Plus,
   Quote,
   Code as CodeIcon,
+  History,
 } from "lucide-react";
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
+import ChapterHistoryDialog from "@/components/chapter-history-dialog";
 
 interface RichEditorProps {
   chapter: Chapter | null;
@@ -34,6 +36,7 @@ interface RichEditorProps {
   status: string;
   onChangeContent: (content: string) => void;
   onSave: () => void;
+  onRestoreChapter?: (chapter: Chapter) => void;
   previousChapter?: Chapter | null;
   nextChapter?: Chapter | null;
   onSelectChapter?: (id: number) => void;
@@ -65,6 +68,7 @@ export default function RichEditor({
   status,
   onChangeContent,
   onSave,
+  onRestoreChapter,
   previousChapter,
   nextChapter,
   onSelectChapter,
@@ -73,6 +77,7 @@ export default function RichEditor({
   colors,
   appearance,
 }: RichEditorProps) {
+  const [showHistory, setShowHistory] = useState(false);
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -315,6 +320,20 @@ export default function RichEditor({
           </button>
 
           <button
+            onClick={() => setShowHistory(true)}
+            className={`flex items-center space-x-1.5 text-xs font-bold ${mutedClass} transition-all px-2.5 py-1.5 rounded-lg ${
+              theme === 'dark' ? 'hover:bg-slate-700/60 hover:text-slate-200' :
+              theme === 'sepia' ? 'hover:bg-amber-100 hover:text-amber-900' :
+              'hover:bg-slate-100 hover:text-slate-800'
+            }`}
+            type="button"
+            title="版本历史"
+          >
+            <History size={12} />
+            <span className="hidden xl:inline">历史</span>
+          </button>
+
+          <button
             onClick={onSave}
             className={`flex items-center space-x-1.5 text-xs font-bold ${mutedClass} transition-all px-2.5 py-1.5 rounded-lg ${
               theme === 'dark' ? 'hover:bg-slate-700/60 hover:text-slate-200' :
@@ -394,6 +413,13 @@ export default function RichEditor({
           <span className={`text-[10px] ${mutedClass} hidden sm:block`}>Tab 缩进 · Ctrl+Enter 保存</span>
         </div>
       </div>
+      {showHistory && onRestoreChapter && (
+        <ChapterHistoryDialog
+          chapter={chapter}
+          onClose={() => setShowHistory(false)}
+          onRestore={onRestoreChapter}
+        />
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Annotated
 
 from sqlmodel import Field, SQLModel
+from app.core.time import utc_now_naive
 
 
 class User(SQLModel, table=True):
@@ -17,7 +18,7 @@ class User(SQLModel, table=True):
     show_background_on_profile: bool = False
     is_admin: bool = False
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now_naive)
     last_login_at: datetime | None = None
 
 
@@ -27,7 +28,7 @@ class InviteCode(SQLModel, table=True):
     max_uses: int = 1
     uses: int = 0
     is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now_naive)
     expires_at: datetime | None = None
 
 
@@ -79,6 +80,11 @@ class UserProfileUpdate(SQLModel):
     current_work: Annotated[str | None, Field(default=None, max_length=240)] = None
     avatar_color: Annotated[str | None, Field(default=None, max_length=24)] = None
     show_background_on_profile: bool | None = None
+
+
+class AdminUserUpdate(SQLModel):
+    is_admin: bool | None = None
+    is_active: bool | None = None
 
 
 class InviteCreateRequest(SQLModel):

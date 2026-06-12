@@ -16,6 +16,7 @@ from app.models.books import Book
 from app.core.auth import CurrentUser, get_current_user
 from app.services.knowledge_service import get_knowledge_service, _chunk_text
 from app.services.workspace_service import build_docx_export, build_txt_export, delete_chapter_files, write_chapter_file
+from app.services.chapter_revision_service import snapshot_chapter
 
 
 async def generate_chapter_summary_background(
@@ -226,6 +227,8 @@ def read_chapter(
     db_chapter = _chapter_belongs_to_user(session, chapter_id, current_user.username)
     if not db_chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
+    if chapter.content is not None or chapter.title is not None:
+        snapshot_chapter(session, db_chapter, current_user.username)
     return db_chapter
 
 

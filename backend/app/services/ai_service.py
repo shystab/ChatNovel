@@ -4,13 +4,26 @@ AI 服务层 - 通用 AI 服务（工具调用版）
 import json
 import logging
 import re
-from dataclasses import dataclass
 from typing import List
 
 from sqlmodel import Session, select, or_
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.services.ai_provider import BaseAIProvider, get_ai_provider
+from app.services.ai_context import (
+    MemoryProfile,
+    chapter_brief,
+    clip_text,
+    detect_memory_profile,
+    plain_text,
+    requests_external_reference,
+    split_sentences,
+)
+from app.services.ai_tool_protocol import (
+    contains_tool_protocol,
+    parse_tool_calls,
+    strip_tool_protocol,
+)
 from app.services.knowledge_service import get_knowledge_service
 from app.crud.memory_crud import get_enabled_preset, get_memory_summary
 from app.crud.preset_crud import get_enabled_preset_new
@@ -48,6 +61,12 @@ DEFAULT_SUMMARY_SYSTEM = "你是专业小说摘要生成助手。请为以下章
 
 logger = logging.getLogger(__name__)
 
+EXTERNAL_REFERENCE_BOUNDARY = """【外部参考边界】
+- 以下内容来自用户上传的外部资料，不属于当前小说的既定事实。
+- 除非用户明确要求采用，否则不要把其中的人名、角色关系、事件、世界观设定或时间线写入当前小说。
+- 文风参考只能提炼抽象特征，例如节奏、句式、视角和氛围；不得复用原文表达或情节。
+- 当前章节、附近章节摘要和本书检索结果与外部资料冲突时，始终以本书内容为准。"""
+
 FORESHADOWING_KEYWORDS = (
     "伏笔", "暗示", "预感", "异样", "奇怪", "秘密", "隐瞒", "真相", "疑点", "谜",
     "梦", "旧", "伤疤", "钥匙", "信", "照片", "玉佩", "项链", "标记", "符号",
@@ -65,25 +84,6 @@ AGENT_EDIT_ACTIONS = {
 }
 
 
-@dataclass(frozen=True)
-class MemoryProfile:
-    """不同写作需求对应的自动记忆层配置。"""
-
-    name: str
-    label: str
-    current_chars: int = 1800
-    use_nearby: bool = True
-    nearby_before: int = 2
-    nearby_after: int = 1
-    use_chapter_rag: bool = True
-    use_external_rag: bool = False
-    rag_top_k: int = 3
-    use_book_outline: bool = False
-    book_outline_limit: int = 50
-    use_foreshadowing_scan: bool = False
-    foreshadowing_scope: str = "current"
-
-
 # ──────────────────────────────────────────────
 # 工具定义（Function Calling）
 # ──────────────────────────────────────────────
@@ -92,8 +92,13 @@ WRITING_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_current_chapter",
-            "description": "读取当前编辑器/当前章节内容。适合续写、改写、总结本章、检查当前正文时调用。",
-            "parameters": {"type": "object", "properties": {}}
+            "description": "读取当前编辑器/当前章节内容；也可以按章节编号读取指定章节。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chapter_id": {"type": "string", "description": "可选章节编号或标题，例如“第 4 章”"}
+                }
+            }
         }
     },
     {
@@ -106,6 +111,19 @@ WRITING_TOOLS = [
                 "properties": {
                     "before": {"type": "integer", "description": "向前读取几章摘要，默认3"},
                     "after": {"type": "integer", "description": "向后读取几章摘要，默认1"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_recent_chapters",
+            "description": "读取当前章节及其之前若干章的正文。适合评价最近几章、梳理连续剧情、比较多章文风时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer", "description": "读取多少章，默认5，最多8"}
                 }
             }
         }
@@ -128,7 +146,7 @@ WRITING_TOOLS = [
         "type": "function",
         "function": {
             "name": "search_external_reference",
-            "description": "在用户上传/选中的外部语料中检索参考。可用于文风、设定、范例情节、资料灵感，但不要直接复制原文。",
+            "description": "仅在用户明确要求参考外部资料、文风、设定或范例时，检索用户上传/选中的外部语料。外部资料不属于当前小说事实。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -274,7 +292,10 @@ class AIService:
                 continue
             next_msg = dict(msg)
             if isinstance(content, str):
-                next_msg["content"] = self._clip_text(self._plain_text(content), content_limit)
+                cleaned_content = self._plain_text(strip_tool_protocol(content))
+                if role == "assistant" and not cleaned_content:
+                    continue
+                next_msg["content"] = self._clip_text(cleaned_content, content_limit)
             cleaned.append(next_msg)
 
         if len(cleaned) <= keep_last:
@@ -288,27 +309,11 @@ class AIService:
 
     @staticmethod
     def _clip_text(text: str, limit: int) -> str:
-        text = (text or "").strip()
-        if len(text) <= limit:
-            return text
-        return text[:limit] + "...（已截断）"
+        return clip_text(text, limit)
 
     @staticmethod
     def _plain_text(value: str) -> str:
-        value = value or ""
-        value = re.sub(r"<br\s*/?>", "\n", value, flags=re.IGNORECASE)
-        value = re.sub(r"</p\s*>", "\n\n", value, flags=re.IGNORECASE)
-        value = re.sub(r"<[^>]+>", "", value)
-        replacements = {
-            "&nbsp;": " ",
-            "&lt;": "<",
-            "&gt;": ">",
-            "&amp;": "&",
-            "&quot;": '"',
-        }
-        for old, new in replacements.items():
-            value = value.replace(old, new)
-        return re.sub(r"\n{3,}", "\n\n", value).strip()
+        return plain_text(value)
 
     def _build_rag_query(self, user_query: str, current_plain: str) -> str:
         user_query = self._clip_text(user_query, 700)
@@ -328,100 +333,17 @@ class AIService:
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:
-        chunks = re.split(r"(?<=[。！？!?；;])\s*|\n+", text)
-        return [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
+        return split_sentences(text)
 
     def _chapter_brief(self, title: str, summary: str, content: str, limit: int = 220) -> str:
-        summary = self._plain_text(summary)
-        if summary:
-            return self._clip_text(summary, limit)
-        plain = self._plain_text(content)
-        if not plain:
-            return "暂无内容"
-        sentences = self._split_sentences(plain)
-        if not sentences:
-            return self._clip_text(plain, limit)
-        if len(sentences) == 1:
-            return self._clip_text(sentences[0], limit)
-        return self._clip_text(f"{sentences[0]} {sentences[-1]}", limit)
+        return chapter_brief(summary, content, limit)
 
     def _detect_memory_profile(self, user_query: str) -> MemoryProfile:
-        """按用户需求选择不同的自动记忆层。"""
-        query = user_query or ""
+        return detect_memory_profile(user_query)
 
-        def has_any(words: tuple[str, ...]) -> bool:
-            return any(word in query for word in words)
-
-        if has_any(("伏笔", "悬念", "疑点", "埋线", "线索", "回收", "铺垫", "前后呼应")):
-            return MemoryProfile(
-                name="foreshadowing",
-                label="伏笔/线索分析",
-                current_chars=2600,
-                nearby_before=4,
-                nearby_after=2,
-                rag_top_k=6,
-                use_book_outline=True,
-                book_outline_limit=90,
-                use_foreshadowing_scan=True,
-                foreshadowing_scope="book",
-            )
-
-        if has_any(("全书", "大纲", "结构", "节奏", "主线", "支线", "人物弧光", "人物线", "设定矛盾", "前后矛盾", "一致性")):
-            return MemoryProfile(
-                name="structure",
-                label="全书结构/连贯性",
-                current_chars=2200,
-                nearby_before=4,
-                nearby_after=2,
-                rag_top_k=6,
-                use_book_outline=True,
-                book_outline_limit=100,
-            )
-
-        if has_any(("总结", "摘要", "概括", "提炼", "梳理本章", "本章讲了", "本章内容")):
-            return MemoryProfile(
-                name="summary",
-                label="本章总结",
-                current_chars=4200,
-                use_nearby=False,
-                use_chapter_rag=False,
-                rag_top_k=0,
-            )
-
-        if has_any(("文风", "仿写", "模仿", "语气", "笔触", "腔调", "风格", "类似")):
-            return MemoryProfile(
-                name="style",
-                label="文风/语料参考",
-                current_chars=2600,
-                nearby_before=2,
-                nearby_after=0,
-                use_chapter_rag=False,
-                use_external_rag=True,
-                rag_top_k=4,
-            )
-
-        if has_any(("润色", "改写", "重写", "扩写", "缩写", "精简", "修改这一段", "优化文笔", "病句", "错别字", "对白")):
-            return MemoryProfile(
-                name="rewrite",
-                label="局部改写/润色",
-                current_chars=3600,
-                nearby_before=1,
-                nearby_after=0,
-                use_chapter_rag=False,
-                rag_top_k=0,
-            )
-
-        if has_any(("续写", "接着写", "继续写", "下一段", "下一章", "补一段", "展开", "生成正文", "写下去")):
-            return MemoryProfile(
-                name="draft",
-                label="续写/正文生成",
-                current_chars=3000,
-                nearby_before=3,
-                nearby_after=1,
-                rag_top_k=4,
-            )
-
-        return MemoryProfile(name="default", label="通用写作问答")
+    @staticmethod
+    def _requests_external_reference(user_query: str) -> bool:
+        return requests_external_reference(user_query)
 
     def _build_auto_context(
         self,
@@ -447,11 +369,9 @@ class AIService:
         )
         current_limit = max(500, min(current_limit, 6000))
 
-        use_external = (
-            bool(selected_doc_ids)
-            or bool(config["suggest_use_external_rag"])
-            or bool(profile.use_external_rag)
-        )
+        # 选中文档只限定 Agent 可检索的资料范围，不代表每轮对话都应自动注入。
+        # 自动注入仅由明确的外部参考意图或用户设置触发，避免资料人物/情节污染本书事实。
+        use_external = bool(config["suggest_use_external_rag"]) or self._requests_external_reference(query)
         use_chapter_rag = bool(config["chat_use_chapter_rag"]) and bool(profile.use_chapter_rag)
 
         return self.build_layered_memory_context(
@@ -461,6 +381,7 @@ class AIService:
             project_id=project_id,
             book_id=book_id,
             query=query_for_search,
+            external_query=query,
             selected_doc_ids=selected_doc_ids,
             use_current_chapter=True,
             max_current_chars=current_limit,
@@ -529,6 +450,62 @@ class AIService:
             lines.append(f"【{prefix}】《{title}》：{summary}")
         return "附近章节摘要：\n" + "\n".join(lines)
 
+    def get_recent_chapters(
+        self,
+        current_chapter_id: int | None,
+        book_id: int | None,
+        user_id: str,
+        count: int = 5,
+    ) -> str:
+        """Read the current and preceding chapters for multi-chapter review."""
+        if not self.session or not book_id:
+            return "当前没有可读取的书籍上下文。"
+        count = max(1, min(int(count or 5), 8))
+        base = (
+            select(Chapter)
+            .join(Book, Book.id == Chapter.book_id)
+            .where(Book.user_id == user_id)
+            .where(Chapter.book_id == book_id)
+        )
+        current = None
+        if current_chapter_id:
+            current = self.session.exec(base.where(Chapter.id == current_chapter_id)).first()
+        if current:
+            base = base.where(Chapter.order <= current.order)
+        chapters = list(self.session.exec(base.order_by(Chapter.order.desc()).limit(count)).all())
+        chapters.reverse()
+        if not chapters:
+            return "当前书籍还没有可读取的章节。"
+        lines = [f"最近 {len(chapters)} 章正文（按章节顺序）："]
+        for chapter in chapters:
+            content = self._clip_text(self._plain_text(chapter.content), 3200)
+            lines.append(f"\n【第 {chapter.order} 章｜{chapter.title}】\n{content or '暂无正文'}")
+        return "\n".join(lines)
+
+    def get_chapter_by_reference(self, reference: str, book_id: int | None, user_id: str) -> str:
+        """Resolve a model-supplied chapter number/title without crossing user boundaries."""
+        if not self.session or not book_id:
+            return "当前没有可读取的书籍上下文。"
+        reference = (reference or "").strip()
+        number_match = re.search(r"\d+", reference)
+        stmt = (
+            select(Chapter)
+            .join(Book, Book.id == Chapter.book_id)
+            .where(Book.user_id == user_id)
+            .where(Chapter.book_id == book_id)
+        )
+        if number_match:
+            stmt = stmt.where(Chapter.order == int(number_match.group()))
+        elif reference:
+            stmt = stmt.where(Chapter.title.contains(reference))  # type: ignore[attr-defined]
+        else:
+            return "没有提供章节编号或标题。"
+        chapter = self.session.exec(stmt).first()
+        if not chapter:
+            return f"没有找到章节“{reference}”。"
+        content = self._clip_text(self._plain_text(chapter.content), 5000)
+        return f"《{chapter.title}》正文：\n{content or '暂无正文'}"
+
     def search_my_chapters(self, query: str, user_id: str, book_id: int | None, top_k: int = 5) -> str:
         """全书章节检索：内部写作上下文，不属于外部语料 RAG。"""
         if not book_id:
@@ -569,10 +546,10 @@ class AIService:
             return "没有提供检索关键词。"
         top_k = max(1, min(int(top_k or 5), 10))
         purpose_labels = {
-            "style": "文风范例（只借鉴语气、节奏和用词，不要直接复制）",
-            "setting": "设定/资料参考",
-            "plot": "情节范例参考（只借鉴结构，不要照搬）",
-            "reference": "外部参考素材",
+            "style": "文风范例（只提炼抽象风格特征）",
+            "setting": "设定/资料参考（仅在用户明确采用时写入本书）",
+            "plot": "情节范例参考（只借鉴结构，不要照搬人物和事件）",
+            "reference": "外部参考素材（不属于当前小说事实）",
         }
         label = purpose_labels.get(purpose, purpose_labels["reference"])
         ks = get_knowledge_service()
@@ -589,10 +566,10 @@ class AIService:
         if not hits:
             return f"未找到与'{query}'相关的外部参考内容。"
 
-        lines = [f"{label}："]
+        lines = [EXTERNAL_REFERENCE_BOUNDARY, f"【本次用途】{label}："]
         for i, h in enumerate(hits, 1):
             source = self._hit_label(h, f"资料{i}")
-            lines.append(f"[{i} | {source}] {self._clip_text(h.get('text', ''), 700)}")
+            lines.append(f"[{i} | {source}] {self._clip_text(h.get('text', ''), 560)}")
         return "\n".join(lines)
 
     def _keyword_search_chapters(self, *, user_id: str, book_id: int, query: str, top_k: int) -> list[dict]:
@@ -764,7 +741,7 @@ class AIService:
 
         profile = self._detect_memory_profile(instruction)
         config = self._get_chat_context_config()
-        use_external = bool(selected_doc_ids) or bool(config["suggest_use_external_rag"]) or profile.use_external_rag
+        use_external = bool(config["suggest_use_external_rag"]) or self._requests_external_reference(instruction)
         use_chapter_rag = bool(config["chat_use_chapter_rag"]) and profile.use_chapter_rag
         current_plain = self._plain_text(current_content)
         query = self._build_rag_query(instruction, current_plain)
@@ -775,6 +752,7 @@ class AIService:
             project_id=project_id,
             book_id=book_id,
             query=query,
+            external_query=instruction,
             selected_doc_ids=selected_doc_ids,
             max_current_chars=max(profile.current_chars, int(config["current_chapter_chars"])),
             use_nearby_summaries=profile.use_nearby,
@@ -983,11 +961,12 @@ class AIService:
         context_rules = [
             "【上下文使用规则】",
             "- 当前编辑器内容优先于历史对话。",
-            "- 外部语料只用于参考风格、设定和信息，禁止直接大段复制。",
+            "- 外部资料不是当前小说事实。未经用户明确要求，不得引入其中的人名、关系、事件、设定或时间线。",
+            "- 外部资料仅可提炼风格或提供参考信息，禁止直接复制；与本书内容冲突时以本书为准。",
             "- 回答续写/改写类请求时，只输出可放入正文的内容，除非用户明确要求解释。",
         ]
         if selected_doc_ids:
-            context_rules.append("- 用户已选择参考语料；外部语料检索应优先限制在这些文档内。")
+            context_rules.append("- 用户已选择可用参考语料；这只限定外部检索范围，不代表本轮必须使用这些资料。")
         if book_id:
             context_rules.append("- 如需回顾伏笔、人物或设定，可参考全书相关片段。")
         system_content = f"{system_content}\n\n" + "\n".join(context_rules)
@@ -1007,11 +986,13 @@ class AIService:
 
 2. get_nearby_chapters_summary - 读取当前章节前后摘要。用于承接剧情、判断人物状态和最近事件。
 
-3. search_my_chapters - 在自己的小说全书中检索相关片段。用于查人物、设定、事件、伏笔、矛盾。
+3. get_recent_chapters - 读取当前章节及其之前若干章正文。用于评价“这几章/最近五章”、连续剧情和多章文风。
 
-4. search_external_reference - 在用户上传/选中的语料中检索。purpose=style 时用于文风参考，purpose=setting/plot/reference 用于设定、情节范例或通用资料。
+4. search_my_chapters - 在自己的小说全书中检索相关片段。用于查人物、设定、事件、伏笔、矛盾。
 
-5. get_book_outline - 读取全书章节摘要索引。用于全书结构、节奏、人物线、伏笔回收和前后文关系。
+5. search_external_reference - 仅在用户明确要求使用外部资料、参考文风、设定或范例时检索。purpose=style 时用于文风参考，purpose=setting/plot/reference 用于设定、情节范例或通用资料。检索结果不是当前小说事实。
+
+6. get_book_outline - 读取全书章节摘要索引。用于全书结构、节奏、人物线、伏笔回收和前后文关系。
 
 6. extract_foreshadowing_candidates - 扫描伏笔/悬念候选句。用于伏笔、埋线、疑点、回收线索。
 
@@ -1019,8 +1000,10 @@ class AIService:
 - 普通续写/润色优先使用自动分层记忆，除非上下文明显不足。
 - 总结本章时可调用 get_current_chapter。
 - 近几章承接问题调用 get_nearby_chapters_summary。
+- 评价最近几章、查看“这五章”或比较连续章节时调用 get_recent_chapters。
 - 全书一致性、伏笔、人物、设定问题调用 search_my_chapters 或 get_book_outline。
-- 文风/外部设定/范例问题调用 search_external_reference，并设置合适 purpose。
+- 用户明确要求文风参考、外部设定、资料或范例时，才调用 search_external_reference，并设置合适 purpose。
+- 选中外部资料只表示允许检索，不表示必须检索；普通续写、润色和本书问题不要调用外部检索。
 - 伏笔、悬念、疑点、埋线问题调用 extract_foreshadowing_candidates；必要时再结合 get_book_outline 判断是否已回收。
 - 可以组合使用多个工具来获取全面信息
 - 如果你不确定用户需要什么信息，可以先调用相关工具获取上下文再回答
@@ -1049,7 +1032,7 @@ class AIService:
                     temperature=0.1,
                     max_tokens=500,
                 )
-                tool_calls = json.loads(response_str)
+                tool_calls = parse_tool_calls(response_str)
             except Exception as exc:
                 logger.info("Tool selection failed, falling back to final response: %s", exc)
                 tool_calls = []
@@ -1122,12 +1105,23 @@ class AIService:
 
                     try:
                         if tool_name == "get_current_chapter":
-                            result = self.get_current_chapter(current_chapter_id, book_id, current_content)
+                            chapter_reference = str(args.get("chapter_id") or "").strip()
+                            if chapter_reference:
+                                result = self.get_chapter_by_reference(chapter_reference, book_id, user_id)
+                            else:
+                                result = self.get_current_chapter(current_chapter_id, book_id, current_content)
                         elif tool_name == "get_nearby_chapters_summary":
                             result = self.get_nearby_chapters_summary(
                                 current_chapter_id,
                                 before=int(args.get("before", 3) or 3),
                                 after=int(args.get("after", 1) or 1),
+                            )
+                        elif tool_name == "get_recent_chapters":
+                            result = self.get_recent_chapters(
+                                current_chapter_id=current_chapter_id,
+                                book_id=book_id,
+                                user_id=user_id,
+                                count=int(args.get("count", 5) or 5),
                             )
                         elif tool_name == "search_my_chapters":
                             query = args.get("query", "")
@@ -1182,11 +1176,27 @@ class AIService:
         }
         full_messages = [{"role": "system", "content": system_content}] + messages
         gen_config = self._get_generation_config()
-        yield from self.provider.stream_chat(
+        final_stream = self.provider.stream_chat(
             messages=full_messages,
             temperature=temperature or gen_config["temperature"],
             max_tokens=max_tokens or gen_config["max_tokens"],
         )
+        pending = ""
+        leaked_protocol = False
+        for chunk in final_stream:
+            pending += chunk
+            if contains_tool_protocol(pending):
+                leaked_protocol = True
+                continue
+            if len(pending) >= 128 or "\n" in pending:
+                yield pending
+                pending = ""
+        if leaked_protocol:
+            logger.warning("Suppressed leaked tool protocol from final model response")
+            safe_text = strip_tool_protocol(pending)
+            yield safe_text or "我没能完成这次章节读取，请重新生成一次。"
+        elif pending:
+            yield pending
 
     # ──────────────────────────────────────────────
     # 其他写作辅助能力：外部语料检索、轻量分析、续写、摘要和分层记忆。
@@ -1200,6 +1210,7 @@ class AIService:
         project_id: str,
         book_id: int | None,
         query: str,
+        external_query: str | None = None,
         top_k: int = 5,
         use_external: bool = True,
         use_chapters: bool = True,
@@ -1224,8 +1235,8 @@ class AIService:
                     ext_hits = ks.search_external(
                         user_id=user_id,
                         project_id=project_id,
-                        query=query,
-                        top_k=top_k,
+                        query=(external_query or query).strip(),
+                        top_k=min(top_k, 2),
                         weight=external_weight,
                         document_ids=selected_doc_ids,
                     )
@@ -1234,10 +1245,11 @@ class AIService:
                     ext_hits = []
                 if ext_hits:
                     label = "选中语料参考" if selected_doc_ids else "外部语料参考"
-                    lines.append(f"【{label}（严禁直接复制原文，仅可借鉴风格、用词和设定）】")
+                    lines.append(EXTERNAL_REFERENCE_BOUNDARY)
+                    lines.append(f"【{label}（自动上下文最多提供 2 条，仅供谨慎参考）】")
                     for i, h in enumerate(ext_hits, start=1):
                         source = self._hit_label(h, f"资料{i}")
-                        lines.append(f"[外{i} | {source}] {self._clip_text(h.get('text', ''), snippet_chars)}")
+                        lines.append(f"[外{i} | {source}] {self._clip_text(h.get('text', ''), min(snippet_chars, 500))}")
 
         # 2. 全书章节检索
         if use_chapters and book_id:
@@ -1441,6 +1453,7 @@ class AIService:
         use_chapter_rag: bool = True,
         external_rag_weight: int = 30,
         query: str = "",
+        external_query: str | None = None,
         selected_doc_ids: list[int] | None = None,
         use_book_outline: bool = False,
         book_outline_limit: int = 60,
@@ -1508,6 +1521,7 @@ class AIService:
                     project_id=project_id,
                     book_id=book_id,
                     query=rag_query,
+                    external_query=external_query,
                     top_k=rag_top_k,
                     use_external=external_enabled,
                     use_chapters=chapter_enabled,

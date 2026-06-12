@@ -47,6 +47,15 @@ export interface ChapterUpdate {
   order?: number;
 }
 
+export interface ChapterRevision {
+  id: number;
+  chapter_id: number;
+  book_id: number;
+  title: string;
+  content: string;
+  created_at: string;
+}
+
 // ── 对话 ──────────────────────────────────────────
 export interface Conversation {
   id: number;
@@ -102,6 +111,11 @@ export interface UserProfileUpdate {
   current_work?: string | null;
   avatar_color?: string | null;
   show_background_on_profile?: boolean;
+}
+
+export interface AdminUserUpdate {
+  is_admin?: boolean;
+  is_active?: boolean;
 }
 
 export interface DirectMessage {

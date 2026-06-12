@@ -200,6 +200,7 @@ export default function BookSelector({
                   onClick={handleCreate}
                   className="p-1 text-emerald-500 hover:text-emerald-400"
                   type="button"
+                  aria-label="确认新建书籍"
                 >
                   <Check size={13} />
                 </button>
@@ -210,6 +211,7 @@ export default function BookSelector({
                   }}
                   className={`p-1 ${muted}`}
                   type="button"
+                  aria-label="取消新建书籍"
                 >
                   <X size={13} />
                 </button>

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Chapter } from "@/types/api";
 import { api, authHeaders, withAccessToken } from "@/lib/api";
 import { ArrowDown, ArrowUp, Download, Plus, Search, Settings, Trash2, Pencil, Check, X, PanelLeftClose, FileText, GripVertical } from "lucide-react";
@@ -73,10 +74,13 @@ function searchSnippet(chapter: Chapter, terms: string[]) {
 
   for (const source of sources) {
     const lower = source.text.toLowerCase();
-    const firstMatch = terms
-      .map(term => lower.indexOf(term))
-      .filter(index => index >= 0)
-      .sort((a, b) => a - b)[0];
+    let firstMatch: number | undefined;
+    for (const term of terms) {
+      const index = lower.indexOf(term);
+      if (index >= 0 && (firstMatch === undefined || index < firstMatch)) {
+        firstMatch = index;
+      }
+    }
 
     if (firstMatch === undefined) continue;
 
@@ -550,6 +554,8 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
               return (
               <li
                 key={chapter.id}
+                role="button"
+                tabIndex={0}
                 draggable={editingId !== chapter.id}
                 onDragStart={() => handleDragStart(chapter.id)}
                 onDragOver={(e) => handleDragOver(e, chapter.id)}
@@ -557,6 +563,13 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
                 onDrop={(e) => { void handleDrop(e, chapter.id); }}
                 onDragEnd={handleDragEnd}
                 onClick={() => editingId !== chapter.id && onChapterSelect(chapter.id)}
+                onKeyDown={(event) => {
+                  if (editingId === chapter.id) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onChapterSelect(chapter.id);
+                  }
+                }}
                 className={`group relative px-3 py-2 cursor-pointer rounded-lg transition-all ${
                   selectedChapterId === chapter.id
                     ? `${selectedBgClass} shadow-sm ring-1`
@@ -651,13 +664,13 @@ export default function ChapterList({ bookId, chapters, onChaptersChange, onChap
 
       {/* 底部工具栏 */}
       <div className={`p-2 border-t ${borderClass} ${cardBgClass} space-y-0.5 shrink-0`}>
-        <a
+        <Link
           href="/settings"
           className={`flex items-center space-x-2.5 px-3 py-2 text-xs ${textClass} ${hoverBgClass} rounded-lg transition-all`}
         >
           <Settings size={13} className={`${mutedClass} shrink-0`} />
           <span className="font-medium">设置 / 知识库</span>
-        </a>
+        </Link>
         <button
           onClick={() => setIsExportOpen(true)}
           className={`w-full flex items-center space-x-2.5 px-3 py-2 text-xs ${textClass} ${hoverBgClass} rounded-lg transition-all`}

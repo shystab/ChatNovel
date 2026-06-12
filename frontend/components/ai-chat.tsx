@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal, flushSync } from "react-dom";
+import { createPortal } from "react-dom";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { api, authHeaders } from "@/lib/api";
+import { stripLeakedToolProtocol } from "@/lib/ai-tool-protocol";
 import { Send, Sparkles, ChevronDown, User, PanelRightClose, Library, Trash2, Plus, FileText, Database, Lightbulb } from "lucide-react";
 import type { Theme, ThemeColors } from "@/hooks/use-theme";
 import { AIAgentStep, Chapter, Conversation } from "@/types/api";
@@ -49,7 +50,7 @@ function conversationPreview(conv: Conversation) {
   const last = [...(conv.messages ?? [])].reverse().find(m => m.content?.trim());
   if (!last) return conv.selected_doc_ids?.length ? "已选择参考文档" : "暂无消息";
   const prefix = last.role === "user" ? "我：" : "AI：";
-  const content = last.content.replace(/\s+/g, " ").trim();
+  const content = stripLeakedToolProtocol(last.content).replace(/\s+/g, " ").trim();
   return `${prefix}${content.length > 24 ? content.slice(0, 24) + "…" : content}`;
 }
 
@@ -71,11 +72,109 @@ const AGENT_LABELS: Record<string, string> = {
   layered_context: "自动分层上下文",
   get_current_chapter: "读取当前章节",
   get_nearby_chapters_summary: "读取附近章节摘要",
+  get_recent_chapters: "读取最近章节正文",
   search_my_chapters: "检索本书章节",
   search_external_reference: "检索外部资料",
   get_book_outline: "读取全书提纲",
   extract_foreshadowing_candidates: "扫描伏笔候选",
 };
+
+function parseAiContent(content: string, streaming: boolean) {
+  if (streaming || !content) return { analysis: content, prose: null };
+  const sep = content.match(/\n-{3,}\n/);
+  if (!sep || sep.index === undefined) return { analysis: content, prose: null };
+  const analysis = content.slice(0, sep.index).trim();
+  const prose = content.slice(sep.index + sep[0].length).trim();
+  return { analysis: analysis || null, prose: prose || null };
+}
+
+async function copyText(content: string) {
+  try {
+    await navigator.clipboard.writeText(content);
+  } catch {}
+}
+
+type AIMessageContentProps = {
+  message: Message;
+  theme: Theme;
+  textClass: string;
+  mutedClass: string;
+  onInsertContent: (content: string) => void;
+  onRegenerate: () => void;
+};
+
+function AIMessageContent({
+  message,
+  theme,
+  textClass,
+  mutedClass,
+  onInsertContent,
+  onRegenerate,
+}: AIMessageContentProps) {
+  const parts = parseAiContent(message.content, !!message.isStreaming);
+  const showProse = !message.isStreaming && !!parts.prose;
+  const showAnalysis = showProse && !!parts.analysis;
+  const actionClass = `inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold ${mutedClass} hover:bg-slate-500/10 hover:text-orange-500`;
+
+  if (message.isStreaming && message.content === "") {
+    const dotClass = theme === "dark" ? "bg-slate-600" : "bg-slate-300";
+    return (
+      <div className="flex space-x-1 py-1" aria-label="AI 正在生成">
+        {[0, 150, 300].map((delay) => (
+          <span
+            key={delay}
+            className={`h-1.5 w-1.5 animate-bounce rounded-full ${dotClass}`}
+            style={{ animationDelay: `${delay}ms` }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (showProse && parts.prose) {
+    return (
+      <>
+        {showAnalysis && (
+          <div className={`text-sm leading-relaxed ${textClass}`}>
+            <p className="whitespace-pre-wrap">{parts.analysis}</p>
+          </div>
+        )}
+        <div className={`group rounded-lg border border-orange-500/20 px-3 py-2.5 ${theme === "dark" ? "bg-slate-800/45" : theme === "sepia" ? "bg-amber-100/35" : "bg-slate-50/80"}`}>
+          <div className={`text-sm leading-relaxed ${textClass}`}>
+            <p className="whitespace-pre-wrap">{parts.prose}</p>
+          </div>
+          <div className="mt-2 flex items-center gap-1 opacity-70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            <button onClick={() => onInsertContent(parts.prose!)} className={`${actionClass} text-orange-500`} type="button">
+              <Plus size={11} /> 写入编辑器
+            </button>
+            <button onClick={() => void copyText(parts.prose!)} className={actionClass} type="button">复制</button>
+            <button onClick={onRegenerate} className={actionClass} type="button">重新生成</button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className={`text-sm leading-relaxed ${textClass} ${message.isStreaming ? "opacity-80" : ""}`}>
+        <p className="whitespace-pre-wrap">
+          {message.content}
+          {message.isStreaming && <span className={`ml-0.5 inline-block h-3.5 w-0.5 animate-caret align-middle ${theme === "dark" ? "bg-slate-400" : "bg-slate-500"}`} />}
+        </p>
+      </div>
+      {!message.isStreaming && message.content && (
+        <div className="mt-2 flex items-center gap-1 opacity-70 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <button onClick={() => onInsertContent(message.content)} className={`${actionClass} text-orange-500`} type="button">
+            <Plus size={11} /> 写入编辑器
+          </button>
+          <button onClick={() => void copyText(message.content)} className={actionClass} type="button">复制</button>
+          <button onClick={onRegenerate} className={actionClass} type="button">重新生成</button>
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function AIChat({ onInsertContent, getEditorContent, theme, onToggleRight, bookId, chapters = [], currentChapterId = null }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -88,6 +187,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
   const presetBtnRef = useRef<HTMLButtonElement>(null);
   const { isStreaming, connect } = useWebSocket();
   const streamBufferRef = useRef("");
+  const streamFrameRef = useRef<number | null>(null);
   const isFirstExchangeRef = useRef(true);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
@@ -163,7 +263,10 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
         try {
           const conv = await api.getConversation(parseInt(storedId, 10));
           if (conv && (conv.messages?.length > 0 || conv.selected_doc_ids?.length > 0 || conv.title !== "新对话")) {
-            setMessages(conv.messages as Message[]);
+            setMessages((conv.messages as Message[]).map(message => ({
+              ...message,
+              content: stripLeakedToolProtocol(message.content),
+            })).filter(message => message.role === "user" || message.content));
             convIdRef.current = conv.id;
             setCurrentConversationId(conv.id);
             setConversationTitle(conv.title || "新对话");
@@ -178,7 +281,15 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
 
       const saved = localStorage.getItem("ai-chat-messages:v1");
       resetDraftConversation();
-      if (saved) { try { setMessages(JSON.parse(saved)); } catch {} }
+      if (saved) {
+        try {
+          const draft = JSON.parse(saved) as Message[];
+          setMessages(draft.map(message => ({
+            ...message,
+            content: stripLeakedToolProtocol(message.content),
+          })).filter(message => message.role === "user" || message.content));
+        } catch {}
+      }
     }
     void initConversation();
   }, [loadConversations, resetDraftConversation]);
@@ -188,7 +299,10 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     setConvDropdownRect(null);
     try {
       const full = await api.getConversation(conv.id);
-      const msgs = (full.messages ?? []) as Message[];
+      const msgs = ((full.messages ?? []) as Message[]).map(message => ({
+        ...message,
+        content: stripLeakedToolProtocol(message.content),
+      })).filter(message => message.role === "user" || message.content);
       setMessages(msgs);
       convIdRef.current = full.id;
       setCurrentConversationId(full.id);
@@ -280,6 +394,12 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     });
   };
 
+  useEffect(() => {
+    return () => {
+      if (streamFrameRef.current !== null) cancelAnimationFrame(streamFrameRef.current);
+    };
+  }, []);
+
   const getAiUnavailableMessage = async () => {
     try {
       const health = await api.getAiHealth();
@@ -310,9 +430,10 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
     connect(withExtras, {
       onToken: (token) => {
         streamBufferRef.current += token;
-        // flushSync 强制每个 token 立即渲染，避免 React 18 批处理合并 WS 消息
-        flushSync(() => {
-          updateLastAiMessage(streamBufferRef.current, true);
+        if (streamFrameRef.current !== null) return;
+        streamFrameRef.current = requestAnimationFrame(() => {
+          streamFrameRef.current = null;
+          updateLastAiMessage(stripLeakedToolProtocol(streamBufferRef.current), true);
         });
       },
       onAgentStep: (step) => {
@@ -325,8 +446,12 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
         });
       },
       onDone: () => {
-        const finalContent = streamBufferRef.current;
-
+        const finalContent = stripLeakedToolProtocol(streamBufferRef.current)
+          || "AI 没有完成这次内容读取，请重新生成一次。";
+        if (streamFrameRef.current !== null) {
+          cancelAnimationFrame(streamFrameRef.current);
+          streamFrameRef.current = null;
+        }
         updateLastAiMessage(finalContent, false);
         setAgentSteps((current) => current.map((step) =>
           step.status === "running" ? { ...step, status: "completed" as const } : step
@@ -343,6 +468,10 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
         }
       },
       onError: (message) => {
+        if (streamFrameRef.current !== null) {
+          cancelAnimationFrame(streamFrameRef.current);
+          streamFrameRef.current = null;
+        }
         setAgentSteps((current) => current.map((step) =>
           step.status === "running" ? { ...step, status: "failed" as const, detail: message } : step
         ));
@@ -519,25 +648,6 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
   const contextPillActive = theme === 'dark' ? 'bg-slate-800 border-slate-600 text-slate-200' : theme === 'sepia' ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-slate-100 border-slate-300 text-slate-800';
   const currentChapter = currentChapterId ? chapters.find(chapter => chapter.id === currentChapterId) ?? null : null;
   const selectedPreset = selectedPresetId ? presets.find(preset => preset.id === selectedPresetId) ?? null : null;
-  const parseAiContent = (content: string, streaming: boolean) => {
-    if (streaming || !content) return { analysis: content, prose: null };
-    const sep = content.match(/\n-{3,}\n/);
-    if (!sep || sep.index === undefined) return { analysis: content, prose: null };
-    const idx = sep.index;
-    const analysis = content.slice(0, idx).trim();
-    const prose = content.slice(idx + sep[0].length).trim();
-    return { analysis: analysis || null, prose: prose || null };
-  };
-  const renderAiContent = (msg: Message) => {
-    const parts = parseAiContent(msg.content, !!msg.isStreaming);
-    const showProse = !msg.isStreaming && !!parts.prose;
-    const showAnalysis = !msg.isStreaming && !!parts.analysis && !!parts.prose;
-    if (msg.isStreaming && msg.content === "")
-      return <div className="flex space-x-1 py-1"><span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "0ms" }} /><span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "150ms" }} /><span className={`w-1.5 h-1.5 ${theme === 'dark' ? 'bg-slate-600' : 'bg-slate-300'} rounded-full animate-bounce`} style={{ animationDelay: "300ms" }} /></div>;
-    if (showProse)
-      return <>{showAnalysis && <div className={`text-sm leading-relaxed ${textClass}`}><p className="whitespace-pre-wrap">{parts.analysis}</p></div>}<div className={`relative group rounded-lg border-l-2 border-blue-500/50 pl-3 py-2 pr-2 ${theme === 'dark' ? 'bg-slate-800/40' : theme === 'sepia' ? 'bg-amber-100/30' : 'bg-slate-50'}`}><div className={`text-sm leading-relaxed ${textClass}`}><p className="whitespace-pre-wrap">{parts.prose}</p></div><div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => onInsertContent(parts.prose!)} className="flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-400 px-2 py-1 rounded" type="button"><Plus size={11} /> 写入编辑器</button><button onClick={async () => { try { await navigator.clipboard.writeText(parts.prose!); } catch {} }} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">复制</button><button onClick={handleRegenerate} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">重新生成</button></div></div></>;
-    return <><div className={`text-sm leading-relaxed ${textClass} ${msg.isStreaming ? "opacity-80" : ""}`}><p className="whitespace-pre-wrap">{msg.content}{msg.isStreaming && <span className={`inline-block w-0.5 h-3.5 ${theme === 'dark' ? 'bg-slate-400' : 'bg-slate-500'} ml-0.5 animate-caret align-middle`} />}</p></div>{!msg.isStreaming && msg.content && <div className="flex items-center gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => onInsertContent(msg.content)} className="flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-400 px-2 py-1 rounded" type="button"><Plus size={11} /> 写入编辑器</button><button onClick={async () => { try { await navigator.clipboard.writeText(msg.content); } catch {} }} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">复制</button><button onClick={handleRegenerate} className={`flex items-center gap-1 text-[10px] ${mutedClass} px-2 py-1 rounded`} type="button">重新生成</button></div>}</>;
-  };
 
   return (
     <div className={`flex flex-col h-full min-h-0 ${bgClass} border-l ${borderClass}`}>
@@ -572,6 +682,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
               onClick={() => setShowConvDropdown(v => !v)}
               className={`shrink-0 p-1 ${mutedClass} ${hoverBgClass} rounded-lg transition-colors`}
               title="切换对话"
+              aria-label="切换对话"
               type="button"
             >
               <ChevronDown size={12} className={`transition-transform ${showConvDropdown ? "rotate-180" : ""}`} />
@@ -621,6 +732,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
                       className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'text-slate-500 hover:text-red-400 hover:bg-slate-600' : 'text-slate-400 hover:text-red-500 hover:bg-slate-100'}`}
                       type="button"
                       title="删除对话"
+                      aria-label={`删除对话 ${conv.title || "新对话"}`}
                     >
                       <Trash2 size={11} />
                     </button>
@@ -665,6 +777,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
               onClick={() => setShowPresetDropdown(v => !v)}
               className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg flex items-center gap-0.5`}
               title="选择人格预设"
+              aria-label="选择人格预设"
               type="button"
               data-preset-toggle="true"
             >
@@ -719,6 +832,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
             onClick={openDocSelector}
             className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg flex items-center space-x-0.5`}
             title="选择参考文档"
+            aria-label="选择参考文档"
             type="button"
           >
             <Library size={13} />
@@ -730,6 +844,8 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
             onClick={() => setDetailedAnalysis(v => !v)}
             className={`p-1.5 transition-colors rounded-lg flex items-center gap-0.5 ${detailedAnalysis ? "text-blue-500 bg-blue-500/10" : mutedClass + " " + hoverBgClass}`}
             title="深度分析模式：AI 会先分析上下文和写作策略，再输出正文"
+            aria-label="切换深度分析模式"
+            aria-pressed={detailedAnalysis}
             type="button"
           >
             <Lightbulb size={13} />
@@ -741,6 +857,7 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
               onClick={onToggleRight}
               className={`p-1.5 ${mutedClass} ${hoverBgClass} transition-colors rounded-lg`}
               title="收起 AI 面板"
+              aria-label="收起 AI 面板"
               type="button"
             >
               <PanelRightClose size={13} />
@@ -848,8 +965,15 @@ export default function AIChat({ onInsertContent, getEditorContent, theme, onTog
                 <p className="whitespace-pre-wrap">{msg.content}</p>
               </div>
             ) : (
-              <div className="max-w-[96%] space-y-2">
-                {renderAiContent(msg)}
+              <div className="group max-w-[96%] space-y-2">
+                <AIMessageContent
+                  message={msg}
+                  theme={theme}
+                  textClass={textClass}
+                  mutedClass={mutedClass}
+                  onInsertContent={onInsertContent}
+                  onRegenerate={handleRegenerate}
+                />
               </div>
             )}
           </div>

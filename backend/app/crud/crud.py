@@ -4,6 +4,7 @@
 from typing import List
 from sqlmodel import Session, select
 from app.models.chapters import Chapter, ChapterCreate, ChapterUpdate
+from app.core.time import utc_now_naive
 
 
 def get_chapter(session: Session, chapter_id: int, book_id: int | None = None) -> Chapter | None:
@@ -116,6 +117,7 @@ def update_chapter(session: Session, db_chapter: Chapter, chapter_in: ChapterUpd
     for key, value in chapter_data.items():
         setattr(db_chapter, key, value)
 
+    db_chapter.update_time = utc_now_naive()
     session.add(db_chapter)
     session.commit()
     session.refresh(db_chapter)

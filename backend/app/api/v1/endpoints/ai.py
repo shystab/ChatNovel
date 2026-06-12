@@ -47,17 +47,13 @@ def check_api_key(session: Session | None = None, user_id: str = "default_user")
 @router.get("/health")
 def ai_health(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
 ):
     provider = settings.AI_PROVIDER
-    configured = False
-    try:
-        with Session(engine) as session:
-            db_settings = get_settings(session, user_id=current_user.username)
-            if db_settings and db_settings.ai_provider:
-                provider = db_settings.ai_provider
-            configured = check_api_key(session, user_id=current_user.username)
-    except Exception:
-        pass
+    db_settings = get_settings(session, user_id=current_user.username)
+    if db_settings and db_settings.ai_provider:
+        provider = db_settings.ai_provider
+    configured = check_api_key(session, user_id=current_user.username)
     if provider == "deepseek":
         model = settings.DEEPSEEK_MODEL
         base_url = settings.DEEPSEEK_BASE_URL

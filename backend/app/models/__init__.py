@@ -1,4 +1,5 @@
 from .chapters import Chapter, ChapterCreate, ChapterUpdate, ChapterRead
+from .chapter_revisions import ChapterRevision, ChapterRevisionRead
 from .setting import Setting, SettingCreate, SettingUpdate, SettingResponse
 from .memory import (
     PromptPreset,
@@ -29,6 +30,7 @@ from .social import (
 
 __all__ = [
     "Chapter", "ChapterCreate", "ChapterUpdate", "ChapterRead",
+    "ChapterRevision", "ChapterRevisionRead",
     "Setting", "SettingCreate", "SettingUpdate", "SettingResponse",
     "PromptPreset", "PromptPresetCreate", "PromptPresetUpdate", "PromptPresetRead",
     "MemorySummary", "MemorySummaryRead",

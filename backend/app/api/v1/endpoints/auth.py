@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
@@ -16,6 +15,7 @@ from app.core.auth import (
     validate_invite,
     verify_password,
 )
+from app.core.time import utc_now_naive
 from app.db.session import get_session
 from app.models.auth import AuthResponse, AuthUser, InviteCode, InviteCreateRequest, InviteRead, LoginRequest, RegisterRequest, User
 
@@ -63,7 +63,7 @@ def login(
     user = session.get(User, payload.username.strip())
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = utc_now_naive()
     session.add(user)
     session.commit()
     session.refresh(user)

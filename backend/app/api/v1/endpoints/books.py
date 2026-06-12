@@ -14,6 +14,8 @@ from app.crud import book_crud
 from app.crud.crud import get_chapters_by_book, get_chapter, create_chapter, update_chapter, delete_chapter
 from app.models.books import Book, BookCreate, BookRead, BookUpdate
 from app.models.chapters import ChapterCreate, ChapterRead, ChapterUpdate, Chapter
+from app.models.chapter_revisions import ChapterRevision, ChapterRevisionRead
+from app.services.chapter_revision_service import list_chapter_revisions, snapshot_chapter
 from app.services.workspace_service import (
     build_docx_export,
     build_txt_export,
@@ -409,7 +411,60 @@ def update_chapter_in_book(
     chapter = get_chapter(session, chapter_id, book_id=book_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="Chapter not found")
+    if chapter_in.content is not None or chapter_in.title is not None:
+        snapshot_chapter(session, chapter, current_user.username)
     updated = update_chapter(session, chapter, chapter_in)
+    write_chapter_file(updated)
+    return updated
+
+
+@router.get(
+    "/{book_id}/chapters/{chapter_id}/revisions",
+    response_model=list[ChapterRevisionRead],
+    summary="List chapter revision history",
+)
+def list_chapter_revision_history(
+    book_id: Annotated[int, Path(ge=1)],
+    chapter_id: Annotated[int, Path(ge=1)],
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+):
+    _get_book_or_404(book_id, session, current_user.username)
+    chapter = get_chapter(session, chapter_id, book_id=book_id)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="Chapter not found")
+    return list_chapter_revisions(session, chapter_id, current_user.username)[:50]
+
+
+@router.post(
+    "/{book_id}/chapters/{chapter_id}/revisions/{revision_id}/restore",
+    response_model=ChapterRead,
+    summary="Restore a chapter revision",
+)
+def restore_chapter_revision(
+    book_id: Annotated[int, Path(ge=1)],
+    chapter_id: Annotated[int, Path(ge=1)],
+    revision_id: Annotated[int, Path(ge=1)],
+    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+):
+    _get_book_or_404(book_id, session, current_user.username)
+    chapter = get_chapter(session, chapter_id, book_id=book_id)
+    revision = session.get(ChapterRevision, revision_id)
+    if (
+        not chapter
+        or not revision
+        or revision.chapter_id != chapter_id
+        or revision.book_id != book_id
+        or revision.user_id != current_user.username
+    ):
+        raise HTTPException(status_code=404, detail="Revision not found")
+    snapshot_chapter(session, chapter, current_user.username, force=True)
+    updated = update_chapter(
+        session,
+        chapter,
+        ChapterUpdate(title=revision.title, content=revision.content),
+    )
     write_chapter_file(updated)
     return updated
 

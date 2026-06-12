@@ -172,12 +172,12 @@ export default function PeopleChatPage() {
         </header>
 
         {status && (
-          <div className="mt-4 rounded-md border border-stone-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <div className="novelcat-surface mt-4 rounded-md px-4 py-3 text-sm text-slate-700">
             {status}
           </div>
         )}
 
-        <section className="novelcat-surface mt-5 grid min-h-[620px] flex-1 overflow-hidden rounded-lg md:min-h-0 md:grid-cols-[280px_minmax(0,1fr)]">
+        <section className="novelcat-surface-strong mt-5 grid min-h-[620px] flex-1 overflow-hidden rounded-lg md:min-h-0 md:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="min-h-0 overflow-hidden border-r border-slate-200 bg-slate-50/60 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-800">联系人</h2>
@@ -222,7 +222,7 @@ export default function PeopleChatPage() {
             </div>
           </aside>
 
-          <section className="flex min-h-[480px] flex-col bg-white/92 md:min-h-0">
+          <section className="flex min-h-[480px] flex-col bg-white/55 md:min-h-0">
             {selectedUser ? (
               <>
                 <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
@@ -260,8 +260,8 @@ export default function PeopleChatPage() {
                         <div
                           className={`max-w-[70%] rounded-md px-3 py-2 text-sm leading-6 shadow-sm ${
                             mine
-                              ? "bg-slate-950 text-white"
-                              : "border border-stone-200 bg-stone-50 text-slate-800"
+                              ? "novelcat-chat-mine bg-slate-950 text-white"
+                              : "novelcat-chat-other border border-stone-200 bg-stone-50 text-slate-800"
                           }`}
                         >
                           <div className="whitespace-pre-wrap break-words">{message.content}</div>
@@ -277,6 +277,7 @@ export default function PeopleChatPage() {
                 <div className="flex gap-2 border-t border-stone-200 p-3">
                   <textarea
                     value={input}
+                    aria-label={`给 ${displayName(selectedUser)} 发消息`}
                     onChange={(event) => setInput(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {

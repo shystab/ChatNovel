@@ -25,6 +25,7 @@ import {
   Image as ImageIcon,
   Copy,
   UserPlus,
+  ShieldCheck,
 } from "lucide-react";
 import PersonaManager from "@/components/persona-manager";
 import { useTheme } from "@/hooks/use-theme";
@@ -472,6 +473,15 @@ export default function SettingsPage() {
                 <span>{label}</span>
               </button>
             ))}
+            {currentUser?.is_admin && (
+              <Link
+                href="/admin"
+                className={`flex shrink-0 items-center space-x-2 rounded-md border border-transparent px-3 py-2 text-sm font-semibold transition-all lg:mt-4 lg:w-full lg:space-x-3 ${navInactive}`}
+              >
+                <ShieldCheck size={16} />
+                <span>管理员中心</span>
+              </Link>
+            )}
           </nav>
         </aside>
 

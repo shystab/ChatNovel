@@ -15,6 +15,7 @@ from sqlmodel import Session, select, func
 
 from app.core.config import settings
 from app.core.security import get_encryption_key
+from app.core.time import utc_now_naive
 from app.db.session import get_session
 from app.models.auth import InviteCode, User
 
@@ -115,7 +116,7 @@ def validate_invite(session: Session, code: str | None) -> InviteCode:
     if not code:
         raise HTTPException(status_code=400, detail="需要邀请码")
     invite = session.get(InviteCode, code.strip())
-    now = datetime.utcnow()
+    now = utc_now_naive()
     if (
         not invite
         or not invite.is_active
@@ -138,7 +139,7 @@ def create_invite(session: Session, created_by: str, max_uses: int = 1, expires_
     code = secrets.token_urlsafe(18)
     expires_at = None
     if expires_days is not None and expires_days > 0:
-        expires_at = datetime.utcnow() + timedelta(days=expires_days)
+        expires_at = utc_now_naive() + timedelta(days=expires_days)
     invite = InviteCode(
         code=code,
         created_by=created_by,

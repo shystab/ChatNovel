@@ -10,9 +10,10 @@ import AIChat from "@/components/ai-chat";
 import BookSelector from "@/components/book-selector";
 import { api, getStoredUser, withAccessToken } from "@/lib/api";
 import { AuthUser, Book, Chapter, EditorAppearance } from "@/types/api";
-import { LogOut, PanelLeftOpen, PanelRightOpen, Users } from "lucide-react";
+import { LogOut, PanelLeftOpen, PanelRightOpen, ShieldCheck, Users } from "lucide-react";
 import { useTheme } from "@/hooks/use-theme";
 import AppBackgroundLayers from "@/components/app-background-layers";
+import { clearChapterDraft, loadChapterDraft, saveChapterDraft } from "@/lib/chapter-drafts";
 
 const SESSION_KEY = "novelcat_session";
 const ACTIVE_BOOK_KEY = "novelcat_active_book";
@@ -81,6 +82,7 @@ export default function Home() {
     editor_paper_opacity: 92,
   });
   const lastSavedRef = useRef("");
+  const draftUserRef = useRef("default_user");
 
   const [showLeft, setShowLeft] = useState(true);
   const [showRight, setShowRight] = useState(true);
@@ -92,7 +94,9 @@ export default function Home() {
   // ── 启动序列 ──────────────────────────────────────
   useEffect(() => {
     async function init() {
-      setCurrentUser(getStoredUser());
+      const storedUser = getStoredUser();
+      setCurrentUser(storedUser);
+      draftUserRef.current = storedUser?.username || "default_user";
       // 1. 恢复面板状态
       const savedSession = loadSession();
       if (savedSession) {
@@ -102,7 +106,10 @@ export default function Home() {
 
       try {
         const user = await api.me().catch(() => null);
-        if (user) setCurrentUser(user);
+        if (user) {
+          setCurrentUser(user);
+          draftUserRef.current = user.username;
+        }
       } catch {}
 
       try {
@@ -168,10 +175,12 @@ export default function Home() {
               savedSession.selectedChapterId
             );
             setChapter(data);
-            if (savedSession.content && savedSession.content !== data.content) {
-              setContent(savedSession.content);
+            const persistentDraft = loadChapterDraft(draftUserRef.current, targetBookId, data.id);
+            const recoveredContent = persistentDraft?.content || savedSession.content;
+            if (recoveredContent && recoveredContent !== data.content) {
+              setContent(recoveredContent);
               lastSavedRef.current = data.content;
-              setStatus("未保存");
+              setStatus("已恢复草稿");
             } else {
               setContent(data.content);
               lastSavedRef.current = data.content;
@@ -300,6 +309,9 @@ export default function Home() {
         item.id === selectedChapterId ? { ...item, ...savedChapter } : item
       )));
       lastSavedRef.current = content;
+      if (activeBookId) {
+        clearChapterDraft(draftUserRef.current, activeBookId, selectedChapterId);
+      }
       setStatus("已同步");
       return true;
     } catch {
@@ -329,9 +341,12 @@ export default function Home() {
           data = await api.getChapter(id);
         }
         setChapter(data);
-        setContent(data.content);
+        const persistentDraft = activeBookId
+          ? loadChapterDraft(draftUserRef.current, activeBookId, data.id)
+          : null;
+        setContent(persistentDraft?.content || data.content);
         lastSavedRef.current = data.content;
-        setStatus("已同步");
+        setStatus(persistentDraft?.content && persistentDraft.content !== data.content ? "已恢复草稿" : "已同步");
       } catch {
         setStatus("加载失败");
       }
@@ -386,9 +401,38 @@ export default function Home() {
     }
   }, [selectedChapterId, syncCurrentChapterDraft]);
 
+  useEffect(() => {
+    if (!activeBookId || !selectedChapterId) return;
+    if (content === lastSavedRef.current) {
+      clearChapterDraft(draftUserRef.current, activeBookId, selectedChapterId);
+      return;
+    }
+    saveChapterDraft(draftUserRef.current, activeBookId, selectedChapterId, content);
+  }, [activeBookId, selectedChapterId, content]);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!selectedChapterId || content === lastSavedRef.current) return;
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [content, selectedChapterId]);
+
   const handleSave = useCallback(async () => {
     await saveCurrentChapter();
   }, [saveCurrentChapter]);
+
+  const handleRestoreChapter = useCallback((restored: Chapter) => {
+    setChapter(restored);
+    setContent(restored.content);
+    setChapters((current) => current.map((item) => item.id === restored.id ? restored : item));
+    lastSavedRef.current = restored.content;
+    if (restored.book_id) {
+      clearChapterDraft(draftUserRef.current, restored.book_id, restored.id);
+    }
+    setStatus("已恢复历史版本");
+  }, []);
 
   const orderedChapters = [...chapters].sort((a, b) => (a.order || 0) - (b.order || 0));
   const currentChapterIndex = selectedChapterId
@@ -602,6 +646,15 @@ export default function Home() {
                     >
                       <Users size={15} />
                     </Link>
+                    {currentUser.is_admin && (
+                      <Link
+                        href="/admin"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md opacity-65 hover:bg-black/5 hover:opacity-100"
+                        title="管理员中心"
+                      >
+                        <ShieldCheck size={15} />
+                      </Link>
+                    )}
                     <button
                       type="button"
                       onClick={handleLogout}
@@ -627,6 +680,7 @@ export default function Home() {
               status={status}
               onChangeContent={handleContentChange}
               onSave={handleSave}
+              onRestoreChapter={handleRestoreChapter}
               previousChapter={previousChapter}
               nextChapter={nextChapter}
               onSelectChapter={(id) => { void handleChapterSelect(id); }}

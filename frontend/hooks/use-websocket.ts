@@ -31,7 +31,10 @@ export function useWebSocket() {
 
   const connect = useCallback((request: AIWSRequest, handlers?: WebSocketHandlers) => {
     if (wsRef.current) {
-      wsRef.current.close();
+      const previous = wsRef.current;
+      wsRef.current = null;
+      previous.onclose = null;
+      previous.close();
     }
 
     setIsStreaming(true);
@@ -90,6 +93,7 @@ export function useWebSocket() {
     };
 
     ws.onclose = () => {
+      if (wsRef.current === ws) wsRef.current = null;
       setIsStreaming(false);
       if (!settled) {
         const message = "AI 连接已断开，请检查后端服务或 API Key 设置";
@@ -100,18 +104,17 @@ export function useWebSocket() {
   }, []);
 
   const disconnect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+    const ws = wsRef.current;
+    if (!ws) return;
+    wsRef.current = null;
+    ws.onclose = null;
+    ws.close();
+    setIsStreaming(false);
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-    };
-  }, [wsRef]);
+    return disconnect;
+  }, [disconnect]);
 
   return {
     isStreaming,

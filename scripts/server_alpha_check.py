@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 TEST_DIR = BACKEND / ".test"
 TEST_DB = TEST_DIR / "server_alpha_check.db"
+TEST_WORKSPACE = TEST_DIR / "workspace"
 
 TEST_DIR.mkdir(parents=True, exist_ok=True)
 for suffix in ("", "-wal", "-shm"):
@@ -23,6 +24,8 @@ for suffix in ("", "-wal", "-shm"):
         path.unlink()
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB.as_posix()}"
+os.environ["NOVEL_WORKSPACE_DIR"] = str(TEST_WORKSPACE)
+os.environ["NOVEL_CHROMA_DIR"] = str(TEST_DIR / "chroma")
 os.environ["AUTH_REQUIRED"] = "true"
 os.environ["ENABLE_LOCAL_EMBEDDINGS"] = "false"
 os.environ["DEEPSEEK_API_KEY"] = ""

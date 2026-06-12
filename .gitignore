@@ -111,6 +111,7 @@ opencode.json
 
 # Testing
 coverage/
+backend/.test/
 
 # Vercel
 .vercel

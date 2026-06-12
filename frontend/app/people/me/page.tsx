@@ -262,7 +262,7 @@ export default function MyPeoplePage() {
         </header>
 
         {status && (
-          <div className="mt-4 rounded-md border border-stone-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <div className="novelcat-surface mt-4 rounded-md px-4 py-3 text-sm text-slate-700">
             {status}
           </div>
         )}
@@ -406,7 +406,7 @@ export default function MyPeoplePage() {
               </div>
             </aside>
 
-            <section className="novelcat-surface min-h-0 overflow-hidden rounded-lg p-4">
+            <section className="novelcat-surface-strong min-h-0 overflow-hidden rounded-lg p-4">
               {selectedCard ? (
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="mb-4 flex items-center justify-between">

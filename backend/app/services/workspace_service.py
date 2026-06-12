@@ -174,6 +174,39 @@ def user_assets_folder(username: str) -> Path:
     return folder
 
 
+def system_assets_folder() -> Path:
+    folder = workspace_root() / ".assets" / "system"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def find_system_asset(stem: str) -> Path | None:
+    folder = system_assets_folder()
+    files = sorted(folder.glob(f"{safe_filename(stem, 'asset')}.*"))
+    return files[0] if files else None
+
+
+def save_system_image(stem: str, filename: str, data: bytes) -> Path:
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        suffix = ".jpg"
+
+    folder = system_assets_folder()
+    safe_stem = safe_filename(stem, "image")
+    for old_file in folder.glob(f"{safe_stem}.*"):
+        old_file.unlink(missing_ok=True)
+
+    path = folder / f"{safe_stem}{suffix}"
+    path.write_bytes(data)
+    return path
+
+
+def delete_system_asset(stem: str) -> None:
+    folder = system_assets_folder()
+    for path in folder.glob(f"{safe_filename(stem, 'asset')}.*"):
+        path.unlink(missing_ok=True)
+
+
 def save_user_asset(username: str, kind: str, filename: str, data: bytes, stem: str | None = None) -> str:
     suffix = Path(filename).suffix.lower()
     if suffix not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:

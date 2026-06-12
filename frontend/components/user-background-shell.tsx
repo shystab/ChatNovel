@@ -32,7 +32,7 @@ export default function UserBackgroundShell({
   }, []);
 
   return (
-    <main className={`relative min-h-[100dvh] overflow-x-hidden ${backgroundUrl ? "bg-slate-900" : "novelcat-social-shell"} ${className}`}>
+    <main className={`relative min-h-[100dvh] overflow-x-hidden ${backgroundUrl ? "novelcat-background-active bg-slate-900" : "novelcat-social-shell"} ${className}`}>
       <AppBackgroundLayers url={backgroundUrl} blur={blur} dim={dim} mode="page" />
       <div className="relative min-h-[100dvh]">{children}</div>
     </main>

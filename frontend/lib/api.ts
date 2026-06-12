@@ -2,6 +2,7 @@ import {
   Chapter,
   ChapterCreate,
   ChapterUpdate,
+  ChapterRevision,
   Book,
   BookCreate,
   BookUpdate,
@@ -20,6 +21,7 @@ import {
   PersonaUpdate,
   AuthResponse,
   AuthUser,
+  AdminUserUpdate,
   DirectMessage,
   InviteCode,
   ShowcaseCard,
@@ -152,6 +154,25 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ max_uses: maxUses, expires_days: expiresDays }),
     }),
+  listInvites: () => req<InviteCode[]>(`${BASE}/auth/invites`),
+  listAdminUsers: () => req<UserProfile[]>(`${BASE}/admin/users`),
+  updateAdminUser: (username: string, data: AdminUserUpdate) =>
+    req<UserProfile>(`${BASE}/admin/users/${encodeURIComponent(username)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }),
+  uploadLoginCover: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return req<{ updated: boolean; filename: string }>(`${BASE}/admin/login-cover`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  clearLoginCover: () => req<void>(`${BASE}/admin/login-cover`, { method: "DELETE" }),
+  loginCoverUrl: (version?: string | number | null) =>
+    assetUrl(`${BASE}/admin/login-cover`, version),
   listUsers: () => req<UserProfile[]>(`${BASE}/users/`),
   getMyProfile: () => req<UserProfile>(`${BASE}/users/me`),
   updateMyProfile: (profile: UserProfileUpdate) =>
@@ -256,6 +277,12 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chapter_ids: chapterIds }),
+    }),
+  listChapterRevisions: (bookId: number, chapterId: number) =>
+    req<ChapterRevision[]>(`${BASE}/books/${bookId}/chapters/${chapterId}/revisions`),
+  restoreChapterRevision: (bookId: number, chapterId: number, revisionId: number) =>
+    req<Chapter>(`${BASE}/books/${bookId}/chapters/${chapterId}/revisions/${revisionId}/restore`, {
+      method: "POST",
     }),
 
   // ── Chapters (旧接口，向后兼容) ────────────────

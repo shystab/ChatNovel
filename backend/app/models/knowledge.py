@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Annotated
 
 from sqlmodel import Field, SQLModel
+from app.core.time import utc_now_naive
 
 
 class KnowledgeDocument(SQLModel, table=True):
@@ -11,7 +12,7 @@ class KnowledgeDocument(SQLModel, table=True):
     user_id: Annotated[str, Field(index=True)]
     project_id: Annotated[str, Field(index=True)]
     title: Annotated[str, Field(index=True)]
-    created_at: Annotated[datetime, Field(default_factory=datetime.utcnow)]
+    created_at: Annotated[datetime, Field(default_factory=utc_now_naive)]
 
 
 class KnowledgeChunk(SQLModel, table=True):
@@ -20,7 +21,7 @@ class KnowledgeChunk(SQLModel, table=True):
     user_id: Annotated[str, Field(index=True)]
     project_id: Annotated[str, Field(index=True)]
     text: Annotated[str, Field(description="分段后的文本内容")]
-    created_at: Annotated[datetime, Field(default_factory=datetime.utcnow)]
+    created_at: Annotated[datetime, Field(default_factory=utc_now_naive)]
 
 
 class KnowledgeUploadRequest(SQLModel):
